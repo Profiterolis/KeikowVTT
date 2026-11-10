@@ -82,8 +82,8 @@ Cada fase deve funcionar sozinha antes de avançar.
   2. ✅ Regras do assistente em `core/` (`criacaoDePersonagem.ts`): compra de pontos, conferência dos atributos por método, rolagem, perícias da classe, montar a ficha a partir das escolhas, magias da classe com o guia da tabela, subida de nível (multiclasse, PV, aumento ou talento) e as permissões novas.
   3. ✅ Tela do assistente de criação (`AssistenteCriacao.tsx`, `SubidaDeNivel.tsx`, aberta pelo "+ Criar personagem (assistente)" em Fichas): Nome → Espécie → Classe → Antecedente → Atributos → Perícias → Magias → Equipamento → Revisão, com prévia calculada ao lado.
   4. ✅ Subida de nível (`SubidaDeNivel.tsx`): o mestre usa "Liberar 1 nível" na ficha; o dono (ou o mestre) usa "Subir de nível" e escolhe a classe ou a multiclasse, os PV, o aumento ou talento e as magias novas, vendo antes e depois.
-  5. Seção "Criação de personagem" na tela Regras (próximo).
-  6. Verificação final.
+  5. ✅ Seção "Criação de personagem" na tela Regras: jogadores criam ou não, métodos de atributos, pontos, máximo de atributo, fórmula da rolagem, conjunto padrão e tabela de custos (acrescentar valores acima ou abaixo, tirar valores). Mudança com problema não vale e explica o motivo.
+  6. Verificação final (próximo).
 - **Fase 4 concluída** (banco de dados do jogo), em 12 passos:
   1. ✅ Armazenamento novo (IndexedDB), trazendo o mapa do armazenamento antigo.
   2. ✅ Campanha, jogadores simulados e registro de quem fez cada ação.

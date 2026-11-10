@@ -5,7 +5,16 @@ import type { LojaCompendio } from '../core/compendio';
 import { ATRIBUTOS, type Atributo } from '../core/entradas';
 import type { LojaFichas } from '../core/fichas';
 import { ehMestre, fichasVisiveis } from '../core/permissoes';
-import { conferirRegras, idSalvaguarda, type DefinicaoPericia, type DefinicaoValor, type Regras } from '../core/regras';
+import {
+  conferirRegras,
+  idSalvaguarda,
+  METODOS_ATRIBUTOS,
+  type DefinicaoPericia,
+  type DefinicaoValor,
+  type MetodoAtributos,
+  type Regras,
+  type RegrasDeCriacao,
+} from '../core/regras';
 import { novoIdDeRegra, usosDoNome, type LojaRegras } from '../core/regrasDaCampanha';
 import { REGRAS_PADRAO } from '../core/regrasPadrao';
 import { CampoFormula, CampoLinhas, CampoNumero, CampoTexto } from './camposFormulario';
@@ -240,6 +249,8 @@ export function TelaRegras({ lojaRegras, lojaFichas, lojaCompendio, agindoComoId
             </div>
           </section>
 
+          <SecaoCriacao regras={regras} editar={editar} mestre={mestre} />
+
           <section className="ficha-secao">
             <h3>Atributos</h3>
             <div className="formulario">
@@ -389,5 +400,148 @@ function CriarNovo({ rotulo, dica, aoCriar }: { readonly rotulo: string; readonl
         {rotulo}
       </button>
     </form>
+  );
+}
+
+const ROTULO_METODO: Readonly<Record<MetodoAtributos, string>> = {
+  pontos: 'Compra de pontos',
+  padrao: 'Conjunto padrão',
+  rolagem: 'Rolar os dados',
+};
+
+/** Como os personagens são criados nesta campanha: quem cria e como os atributos são escolhidos. */
+function SecaoCriacao({
+  regras,
+  editar,
+  mestre,
+}: {
+  readonly regras: Regras;
+  readonly editar: (nova: Regras, campo: string, avisar?: boolean) => void;
+  readonly mestre: boolean;
+}) {
+  const { criacao } = regras;
+  const mudar = (mudancas: Partial<RegrasDeCriacao>, campo: string, avisar = true) =>
+    editar({ ...regras, criacao: { ...criacao, ...mudancas } }, `criacao-${campo}`, avisar);
+  const custos = [...criacao.custos].sort((a, b) => a.valor - b.valor);
+  const unico = (nome: string) => `${nome}-${crypto.randomUUID()}`;
+
+  return (
+    <section className="ficha-secao">
+      <h3>Criação de personagem</h3>
+      <label className="campo-marcar">
+        <input type="checkbox" checked={criacao.jogadoresCriam} onChange={(e) => mudar({ jogadoresCriam: e.target.checked }, unico('jogadores'))} />
+        Jogadores criam os próprios personagens pelo assistente
+      </label>
+      <div className="regras-metodos">
+        <span className="tela-dica">Métodos de atributos que valem:</span>
+        {METODOS_ATRIBUTOS.map((m) => (
+          <label key={m} className="campo-marcar">
+            <input
+              type="checkbox"
+              checked={criacao.metodos.includes(m)}
+              onChange={(e) =>
+                mudar(
+                  { metodos: METODOS_ATRIBUTOS.filter((x) => (x === m ? e.target.checked : criacao.metodos.includes(x))) },
+                  unico('metodos'),
+                )
+              }
+            />
+            {ROTULO_METODO[m]}
+          </label>
+        ))}
+      </div>
+
+      <div className="formulario">
+        <CampoNumero
+          rotulo="Pontos para gastar"
+          inteiro
+          minimo={0}
+          valor={criacao.pontos}
+          aoMudar={(v) => v !== null && mudar({ pontos: v }, 'pontos')}
+        />
+        <CampoNumero
+          rotulo="Máximo de um atributo ao subir de nível"
+          inteiro
+          minimo={1}
+          maximo={30}
+          valor={criacao.maximoAtributo}
+          aoMudar={(v) => v !== null && mudar({ maximoAtributo: v }, 'maximo')}
+        />
+        <CampoFormula
+          rotulo="Rolagem de cada atributo"
+          valor={criacao.rolagem}
+          conferir={(texto) => {
+            const [problema] = conferirRegras({ ...regras, criacao: { ...criacao, rolagem: texto } });
+            return problema ? problema.erro : null;
+          }}
+          aoMudar={(rolagem) => mudar({ rolagem }, 'rolagem', false)}
+        />
+      </div>
+
+      <h4 className="regras-subtitulo">Conjunto padrão (um valor para cada atributo)</h4>
+      <div className="regras-linha-numeros">
+        {criacao.conjuntoPadrao.map((v, i) => (
+          <CampoNumero
+            key={i}
+            rotulo={`${i + 1}º`}
+            inteiro
+            minimo={1}
+            maximo={30}
+            valor={v}
+            aoMudar={(n) => n !== null && mudar({ conjuntoPadrao: criacao.conjuntoPadrao.map((x, j) => (j === i ? n : x)) }, `conjunto-${i}`)}
+          />
+        ))}
+      </div>
+
+      <h4 className="regras-subtitulo">Custos da compra de pontos</h4>
+      <p className="tela-dica">Só os valores desta tabela podem ser comprados; o menor costuma custar zero.</p>
+      <div className="regras-custos">
+        {custos.map((c) => (
+          <div key={c.valor} className="regras-custo">
+            <span>Valor {c.valor}</span>
+            <CampoNumero
+              rotulo="Custo"
+              inteiro
+              minimo={0}
+              valor={c.custo}
+              aoMudar={(n) =>
+                n !== null && mudar({ custos: criacao.custos.map((x) => (x.valor === c.valor ? { ...x, custo: n } : x)) }, `custo-${c.valor}`)
+              }
+            />
+            {mestre && (
+              <button
+                type="button"
+                title="Tirar este valor da compra de pontos"
+                disabled={custos.length <= 1}
+                onClick={() => mudar({ custos: criacao.custos.filter((x) => x.valor !== c.valor) }, unico('tirar-custo'))}
+              >
+                Tirar
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+      {mestre && (
+        <div className="tela-cabecalho-acoes regras-custos-acoes">
+          <button
+            type="button"
+            disabled={(custos[0]?.valor ?? 1) <= 1}
+            onClick={() => mudar({ custos: [{ valor: custos[0].valor - 1, custo: 0 }, ...criacao.custos] }, unico('custo-abaixo'))}
+          >
+            + Valor abaixo de {custos[0]?.valor}
+          </button>
+          <button
+            type="button"
+            disabled={(custos.at(-1)?.valor ?? 30) >= 30}
+            onClick={() => {
+              const ultimo = custos.at(-1)!;
+              mudar({ custos: [...criacao.custos, { valor: ultimo.valor + 1, custo: ultimo.custo + 2 }] }, unico('custo-acima'));
+            }}
+          >
+            + Valor acima de {custos.at(-1)?.valor}
+          </button>
+        </div>
+      )}
+    </section>
   );
 }

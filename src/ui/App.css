@@ -2395,3 +2395,65 @@ fieldset.formulario {
   border-color: #a8d08a !important;
   color: #a8d08a !important;
 }
+
+.regras-subtitulo {
+  margin: 14px 0 6px;
+  color: #a5a79f;
+  font-size: 13px;
+}
+
+.regras-linha-numeros {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(60px, 1fr));
+  gap: 8px;
+  max-width: 480px;
+}
+
+.regras-custos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.regras-custo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid #262a35;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.regras-custo button,
+.regras-custos-acoes button {
+  padding: 3px 8px;
+  border: 1px solid #333846;
+  border-radius: 4px;
+  background: #2a2e3a;
+  color: #e6e3da;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.regras-custo button:disabled,
+.regras-custos-acoes button:disabled {
+  color: #6b6d68;
+  cursor: default;
+}
+
+.regras-custos-acoes {
+  margin-top: 8px;
+}
+
+.regras-metodos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 16px;
+}
+
+.regras-metodos .tela-dica {
+  margin: 0;
+}
