@@ -667,6 +667,22 @@ describe('token do grupo', () => {
     expect(lojaGrupo.obterEstado().posicao).toEqual(B);
   });
 
+  it('quem não pode conduzir recebe o motivo, quando há um', () => {
+    const loja = criarLojaMapa();
+    loja.despachar({ tipo: 'ColocarTile', coord: A, terreno: 'tile' });
+    const lojaGrupo = criarLojaGrupo({ ...GRUPO_INICIAL, posicao: A });
+    const aoAvisar = vi.fn();
+    const cena = { mostrarPrevia: vi.fn(), mostrarPreviaDecoracao: vi.fn(), limparPrevia: vi.fn(), decoracaoEm: vi.fn().mockReturnValue(null), moverDecoracaoVisual: vi.fn(), sincronizarDecoracoes: vi.fn(), mostrarPassos: vi.fn(), marcarGrupoSelecionado: vi.fn(), moverTokenVisual: vi.fn() };
+    const controlador = criarControlador(loja, lojaGrupo, manifesto, () => cena, vi.fn(), aoAvisar, {
+      podeConduzir: () => false,
+      passos: () => [],
+      aoMudarPasso: vi.fn(),
+      motivoSemConduzir: () => 'O mestre travou o movimento do grupo.',
+    });
+    controlador.aoIniciarTraco({ x: 0, y: -60 });
+    expect(aoAvisar).toHaveBeenCalledWith('O mestre travou o movimento do grupo.');
+  });
+
   it('com uma ferramenta escolhida, o token não reage', () => {
     const { lojaGrupo, controlador, clicar } = comGrupo();
     controlador.definirFerramenta({ tipo: 'revelar' });

@@ -25,7 +25,7 @@ export interface CabecaDoGrupo {
 }
 
 /** Uma cor estável por membro, tirada do id, para cada um ser reconhecível. */
-function corDe(id: string): number {
+export function corDoMembro(id: string): number {
   let hash = 0;
   for (const letra of id) {
     hash = (hash * 31 + letra.charCodeAt(0)) >>> 0;
@@ -57,7 +57,7 @@ function desenharEstandarte(): Graphics {
 function criarCabeca(cabeca: CabecaDoGrupo, raio: number): Container {
   const container = new Container();
   container.addChild(
-    new Graphics().circle(0, 0, raio).fill(corDe(cabeca.id)).stroke({ width: 3, color: COR_BORDA }),
+    new Graphics().circle(0, 0, raio).fill(corDoMembro(cabeca.id)).stroke({ width: 3, color: COR_BORDA }),
   );
   const inicial = new Text({
     text: (cabeca.nome.trim()[0] ?? '?').toUpperCase(),

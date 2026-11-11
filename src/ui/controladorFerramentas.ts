@@ -37,6 +37,8 @@ export interface OpcoesDoToken {
   readonly passos: () => readonly PassoPossivel[];
   /** O vizinho sob o mouse mudou: a tela mostra a explicação do custo. */
   readonly aoMudarPasso: (passo: PassoPossivel | null) => void;
+  /** Por que quem age não pode mover o grupo agora, quando vale avisar (o líder com o movimento travado). */
+  readonly motivoSemConduzir?: () => string | null;
 }
 
 const SEM_TOKEN: OpcoesDoToken = { podeConduzir: () => false, passos: () => [], aoMudarPasso: () => undefined };
@@ -93,7 +95,18 @@ export function criarControlador(
   /** O token só reage sem ferramenta, para quem pode conduzir o grupo. */
   const podeMexerNoToken = (ponto: PontoMundo) => {
     const { posicao } = lojaGrupo.obterEstado();
-    return ferramenta.tipo === 'nenhuma' && posicao !== null && token.podeConduzir() && noToken(ponto, hexParaMundo(posicao));
+    if (ferramenta.tipo !== 'nenhuma' || posicao === null || !noToken(ponto, hexParaMundo(posicao))) {
+      return false;
+    }
+    if (token.podeConduzir()) {
+      return true;
+    }
+    // O líder pegou o token com o movimento travado: avisa, e o clique segue como um clique comum.
+    const motivo = token.motivoSemConduzir?.();
+    if (motivo) {
+      aoAvisar(motivo);
+    }
+    return false;
   };
 
   const mostrarPassos = (destaque: CoordHex | null) => {

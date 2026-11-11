@@ -19,6 +19,7 @@ import {
   alcanceDaVisao,
   criarLojaGrupo,
   membrosPresentes,
+  motivoParaNaoConduzir,
   passosPossiveis,
   podeConduzir,
   type ContextoDoGrupo,
@@ -26,6 +27,8 @@ import {
   type PassoPossivel,
 } from '../core/grupo';
 import { ExplicacaoDoPasso } from './ExplicacaoDoPasso';
+import { BarraDoGrupo } from './BarraDoGrupo';
+import { PainelGrupo } from './PainelGrupo';
 import { membroNaViagem } from '../core/calculoDaFicha';
 import { criarLojaMapa, type LojaMapa } from '../core/loja';
 import type { EstadoMapa } from '../core/mapa';
@@ -255,6 +258,7 @@ function Editor({
 
   const [hexSelecionado, setHexSelecionado] = useState<CoordHex | null>(null);
   const [passoSobMouse, setPassoSobMouse] = useState<PassoPossivel | null>(null);
+  const [painelGrupoAberto, setPainelGrupoAberto] = useState(false);
   const [agindoComoId, setAgindoComoId] = useState(sessao.autorId);
   const [telaAberta, setTelaAberta] = useState<Tela | null>(null);
   const [mapaTravado, setMapaTravado] = useState(lerMapaTravado);
@@ -306,6 +310,7 @@ function Editor({
               podeConduzir: () => podeConduzir(lojaGrupo.obterEstado(), sessao.autorId, contextoGrupo),
               passos: () => passosPossiveis(lojaGrupo.obterEstado(), contextoGrupo),
               aoMudarPasso: setPassoSobMouse,
+              motivoSemConduzir: () => motivoParaNaoConduzir(lojaGrupo.obterEstado(), sessao.autorId, contextoGrupo),
             },
           )
         : null,
@@ -769,17 +774,6 @@ function Editor({
             </button>
           ))}
         </div>
-        {grupo.posicao && (
-          <button
-            type="button"
-            className="trava-mapa"
-            aria-pressed={grupo.movimentoTravado}
-            title="Enquanto travado, o líder não move o grupo; o mestre continua podendo."
-            onClick={() => lojaGrupo.despachar({ tipo: 'TravarMovimento', travado: !grupo.movimentoTravado })}
-          >
-            {grupo.movimentoTravado ? '⛔ Movimento do líder travado' : '🚶 Líder pode mover o grupo'}
-          </button>
-        )}
         {manifesto && (
           <details className="ajuda-bloco">
             <summary>Aparência dos hexes não vistos</summary>
@@ -816,16 +810,41 @@ function Editor({
           onDrop={aoSoltarNoMapa}
         />
         {passoSobMouse && <ExplicacaoDoPasso passo={passoSobMouse} />}
-        {modoJogador && (
-          <div className="faixa-jogador">
-            <span>
-              Agindo como {agindoComo?.nome || 'jogador'}
-              {!grupo.posicao && ': o grupo ainda não foi posicionado'}
-            </span>
-            <button type="button" onClick={sairDoModoJogador}>
-              Voltar ao mestre
-            </button>
-          </div>
+        <div className="topo-mapa">
+          {modoJogador && (
+            <div className="faixa-jogador">
+              <span>
+                Agindo como {agindoComo?.nome || 'jogador'}
+                {!grupo.posicao && ': o grupo ainda não foi posicionado'}
+              </span>
+              <button type="button" onClick={sairDoModoJogador}>
+                Voltar ao mestre
+              </button>
+            </div>
+          )}
+          <BarraDoGrupo
+            grupo={grupo}
+            lojaGrupo={lojaGrupo}
+            viagem={regras.viagem}
+            mestre={!modoJogador}
+            painelAberto={painelGrupoAberto}
+            aoAlternarPainel={() => {
+              // O painel do grupo e o do hex ocupam o mesmo lugar: um fecha o outro.
+              setHexSelecionado(null);
+              setPainelGrupoAberto(!painelGrupoAberto);
+            }}
+          />
+        </div>
+        {painelGrupoAberto && !hexSelecionado && (
+          <PainelGrupo
+            lojaGrupo={lojaGrupo}
+            lojaFichas={lojaFichas}
+            lojaRolagens={lojaRolagens}
+            contexto={contextoGrupo}
+            participantes={campanha.participantes}
+            autorId={agindoComoId}
+            aoFechar={() => setPainelGrupoAberto(false)}
+          />
         )}
         {hexSelecionado && modoJogador && (
           <PainelHexJogador

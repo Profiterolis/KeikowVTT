@@ -3,6 +3,7 @@ import {
   alcanceDaVisao,
   aplicarAcaoGrupo,
   formatarDuracao,
+  motivoParaNaoConduzir,
   passosPossiveis,
   podeConduzir,
   trilhaDoGrupo,
@@ -366,6 +367,14 @@ describe('trava do movimento', () => {
     const doLider = criarLojaGrupo(viajando, { obterAutorId: () => 'j-ana' }, contexto);
     expect(doLider.despachar({ tipo: 'TravarMovimento', travado: true })).toBe(false);
     expect(aplicar(viajando, { tipo: 'TravarMovimento', travado: false })).toBe(viajando);
+  });
+
+  it('o líder recebe o motivo de não poder andar; os outros, nada', () => {
+    const travado = { ...viajando, movimentoTravado: true };
+    expect(motivoParaNaoConduzir(travado, 'j-ana', contexto)).toBe('O mestre travou o movimento do grupo.');
+    expect(motivoParaNaoConduzir(travado, 'j-bia', contexto)).toBeNull();
+    expect(motivoParaNaoConduzir(travado, 'mestre', contexto)).toBeNull();
+    expect(motivoParaNaoConduzir(viajando, 'j-ana', contexto)).toBeNull();
   });
 
   it('podeConduzir: o mestre sempre; o líder, se não estiver travado; os outros, nunca', () => {

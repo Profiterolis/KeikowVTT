@@ -1595,10 +1595,8 @@ body {
 }
 
 .faixa-jogador {
-  position: absolute;
-  top: 12px;
-  left: 12px;
   display: flex;
+  align-self: flex-start;
   align-items: center;
   gap: 14px;
   max-width: calc(100% - 24px);
@@ -2522,4 +2520,258 @@ fieldset.formulario {
 
 .explicacao-passo.bloqueado strong {
   color: #e05c5c;
+}
+
+/* O topo do mapa: a faixa "Agindo como" e a barra do grupo, empilhadas à esquerda. */
+.topo-mapa {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: calc(100% - 24px);
+  pointer-events: none;
+}
+
+.topo-mapa > * {
+  pointer-events: auto;
+}
+
+/* A barra do grupo: relógio, horas do dia e ritmo, como a barra de um CRPG. */
+.barra-grupo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #333846;
+  border-radius: 8px;
+  background: rgb(29 32 41 / 92%);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  color: #e6e3da;
+  font-size: 13px;
+}
+
+.barra-grupo-linha {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.barra-grupo button {
+  padding: 4px 10px;
+  border: 1px solid #333846;
+  border-radius: 4px;
+  background: #2a2e3a;
+  color: #e6e3da;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.barra-grupo button:hover:not(:disabled) {
+  background: #363b4a;
+}
+
+.barra-grupo button:disabled {
+  color: #6b6d68;
+  cursor: default;
+}
+
+.barra-grupo button[aria-pressed='true'] {
+  border-color: #f0c870;
+  color: #f0c870;
+}
+
+.barra-grupo-relogio {
+  color: #f0c870;
+  font-variant-numeric: tabular-nums;
+}
+
+.barra-grupo-dia {
+  position: relative;
+  width: 150px;
+  height: 18px;
+  overflow: hidden;
+  border: 1px solid #333846;
+  border-radius: 9px;
+  background: #14161c;
+}
+
+.barra-grupo-dia-cheio {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: #5f8f52;
+}
+
+.barra-grupo-dia.forcada {
+  border-color: #ff9a5c;
+}
+
+.barra-grupo-dia.forcada .barra-grupo-dia-cheio {
+  background: #c9673a;
+}
+
+.barra-grupo-dia span {
+  position: relative;
+  display: block;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.barra-grupo-ritmo {
+  color: #b9bcc6;
+}
+
+.barra-grupo-trava {
+  color: #e05c5c;
+}
+
+.barra-grupo-mestre {
+  padding-top: 6px;
+  border-top: 1px solid #2a2e3a;
+}
+
+.barra-grupo-acertar input {
+  width: 70px;
+  margin-left: 4px;
+  padding: 3px 6px;
+  border: 1px solid #333846;
+  border-radius: 4px;
+  background: #14161c;
+  color: #e6e3da;
+  font: inherit;
+}
+
+.barra-grupo-acertar input[type='time'] {
+  width: 90px;
+}
+
+/* Painel do grupo: mesmo lugar do painel do hex. */
+.painel-grupo h3 {
+  margin: 0 0 6px;
+  color: #f0c870;
+  font-size: 13px;
+}
+
+.painel-grupo-secao {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid #2a2e3a;
+}
+
+.painel-grupo-membros {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.painel-grupo-membros li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.painel-grupo-cabeca {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 2px solid #1d2029;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 13px;
+  font-weight: bold;
+}
+
+.painel-grupo-nome {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.painel-grupo-nome small {
+  color: #8f9199;
+  font-size: 11px;
+}
+
+.painel-grupo-acoes {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.painel-grupo-acoes input {
+  width: 38px;
+  margin-left: 2px;
+  padding: 2px 4px;
+  border: 1px solid #333846;
+  border-radius: 4px;
+  background: #14161c;
+  color: #e6e3da;
+  font: inherit;
+  font-size: 12px;
+}
+
+.painel-grupo-acoes label {
+  color: #b9bcc6;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.painel-grupo button,
+.painel-grupo select {
+  padding: 4px 8px;
+  border: 1px solid #333846;
+  border-radius: 4px;
+  background: #2a2e3a;
+  color: #e6e3da;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.painel-grupo button:disabled,
+.painel-grupo select:disabled {
+  color: #6b6d68;
+  cursor: default;
+}
+
+.painel-grupo button[aria-pressed='true'] {
+  border-color: #f0c870;
+  color: #f0c870;
+}
+
+.painel-grupo-linha {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.painel-grupo-linha select {
+  flex: 1;
+  min-width: 0;
+}
+
+.painel-grupo .aviso {
+  color: #ff9a5c;
+}
+
+.painel-grupo-resultado strong {
+  color: #f0c870;
+  font-size: 15px;
 }

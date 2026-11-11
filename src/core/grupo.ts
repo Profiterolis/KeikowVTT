@@ -214,6 +214,17 @@ export function podeConduzir(estado: EstadoGrupo, participanteId: string, contex
   return !estado.movimentoTravado && quemConduz(estado, contexto) === participanteId;
 }
 
+/**
+ * Por que este participante não pode mover o grupo agora, quando vale avisar: o líder
+ * tentando andar com o movimento travado. Para quem nunca conduz, `null` (nada a avisar).
+ */
+export function motivoParaNaoConduzir(estado: EstadoGrupo, participanteId: string, contexto: ContextoDoGrupo): string | null {
+  if (ehMestre(participanteId) || quemConduz(estado, contexto) !== participanteId) {
+    return null;
+  }
+  return estado.movimentoTravado ? 'O mestre travou o movimento do grupo.' : null;
+}
+
 /** "2 h", "1 h 30 min", "45 min". */
 export function formatarDuracao(minutos: number): string {
   const total = Math.round(minutos);
