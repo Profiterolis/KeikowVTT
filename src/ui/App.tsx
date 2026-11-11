@@ -45,6 +45,9 @@ import type { EstadoMapa } from '../core/mapa';
 import type { Manifesto } from '../core/manifesto';
 import { assetsDesconhecidos } from '../core/persistencia';
 import { criarArmazenamentoNavegador, pedirProtecaoDosDados } from '../net/armazenamentoLocal';
+import { criarBancoDeImagens } from '../net/imagens';
+import { imagemDoToken } from '../core/imagens';
+import { ContextoImagens } from './contextoImagens';
 import {
   lerCampanhaLocal,
   lerCompendioLocal,
@@ -127,6 +130,7 @@ interface Sessao {
 type Tela = 'campanha' | 'compendio' | 'fichas' | 'regras' | 'creditos';
 
 const ARMAZENAMENTO = criarArmazenamentoNavegador();
+const IMAGENS = criarBancoDeImagens();
 
 async function iniciarEditor(): Promise<EditorCarregado> {
   pedirProtecaoDosDados();
@@ -532,10 +536,11 @@ function Editor({
       aoTerminarTraco: controlador.aoTerminarTraco,
       aoClicar: controlador.aoClicar,
       obterCabecasDoGrupo: () =>
-        membrosPresentes(lojaGrupo.obterEstado(), contextoGrupo).map((id) => ({
-          id,
-          nome: lojaFichas.obterEstado().fichas[id]?.nome ?? '',
-        })),
+        membrosPresentes(lojaGrupo.obterEstado(), contextoGrupo).map((id) => {
+          const ficha = lojaFichas.obterEstado().fichas[id];
+          return { id, nome: ficha?.nome ?? '', imagem: ficha ? imagemDoToken(ficha) : null };
+        }),
+      carregarImagem: (id) => IMAGENS.endereco(id),
     });
     cenaRef.current = cena;
     return () => {
@@ -685,6 +690,7 @@ function Editor({
 
   return (
     <ContextoRegras.Provider value={regras}>
+    <ContextoImagens.Provider value={IMAGENS}>
     <div className="app">
       <aside className="sidebar">
         <h1>KeikowVTT</h1>
@@ -767,6 +773,7 @@ function Editor({
           </button>
         </div>
         <BarraArquivo
+          imagens={IMAGENS}
           loja={loja}
           lojaGrupo={lojaGrupo}
           lojaCampanha={lojaCampanha}
@@ -982,6 +989,7 @@ function Editor({
       {telaAberta === 'creditos' && <TelaCreditos aoFechar={() => setTelaAberta(null)} />}
       <Notificacoes loja={lojaNotificacoes} participanteId={agindoComoId} />
     </div>
+    </ContextoImagens.Provider>
     </ContextoRegras.Provider>
   );
 }

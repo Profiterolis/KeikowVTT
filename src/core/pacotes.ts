@@ -1,4 +1,4 @@
-import type { EstadoCompendio } from './compendio';
+import { comImagemMantida, type EstadoCompendio } from './compendio';
 import { TIPOS_ENTRADA, type Entrada, type TipoEntrada } from './entradas';
 import { ehObjeto, exigir, type ResultadoDe } from './persistencia';
 import { comoResultado, lerEntradas, lerJson } from './persistenciaCompendio';
@@ -138,11 +138,15 @@ export function entradasParaImportar(
   tipos: ReadonlySet<TipoEntrada>,
   atualizar = false,
 ): Entrada[] {
-  return pacote.entradas.filter((entrada) => {
+  return pacote.entradas.flatMap((entrada) => {
     if (!tipos.has(entrada.tipo)) {
-      return false;
+      return [];
     }
     const atual = estado.entradas[entrada.id];
-    return !atual || (atualizar && JSON.stringify(atual) !== JSON.stringify(entrada));
+    if (!atual) {
+      return [entrada];
+    }
+    const nova = comImagemMantida(entrada, atual);
+    return atualizar && JSON.stringify(atual) !== JSON.stringify(nova) ? [nova] : [];
   });
 }

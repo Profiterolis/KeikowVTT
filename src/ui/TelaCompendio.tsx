@@ -8,6 +8,8 @@ import { EditorAcoes, EditorEfeitos, FormularioDados } from './FormulariosEntrad
 import { PainelImportacao } from './PainelImportacao';
 import { ROTULO_TIPO } from './rotulosCompendio';
 import { SeletorVisibilidade } from './SeletorVisibilidade';
+import { CampoImagem, MiniaturaImagem } from './CampoImagem';
+import { comImagem } from '../core/imagens';
 
 /** Mais que isso deixa a lista lenta e não ajuda a achar nada: melhor refinar a busca. */
 const LIMITE_LISTA = 300;
@@ -242,12 +244,15 @@ function EditorEntrada({
       }}
     >
       <div className="editor-entrada-topo">
-        <div>
-          <h2>{entrada.nome || '(sem nome)'}</h2>
-          <p className="tela-dica">
-            {ROTULO_TIPO[entrada.tipo]} ·{' '}
-            {entrada.origem.tipo === 'pacote' ? `do pacote ${entrada.origem.pacote}` : 'criada nesta campanha'}
-          </p>
+        <div className="titulo-com-imagem">
+          {entrada.imagem && <MiniaturaImagem id={entrada.imagem} nome={entrada.nome} tamanho={56} />}
+          <div>
+            <h2>{entrada.nome || '(sem nome)'}</h2>
+            <p className="tela-dica">
+              {ROTULO_TIPO[entrada.tipo]} ·{' '}
+              {entrada.origem.tipo === 'pacote' ? `do pacote ${entrada.origem.pacote}` : 'criada nesta campanha'}
+            </p>
+          </div>
         </div>
         {!somenteLeitura && (
           <div className="tela-cabecalho-acoes">
@@ -264,6 +269,13 @@ function EditorEntrada({
       {/* Um fieldset desativado desativa todos os campos de dentro: o jogador lê, mas não muda. */}
       <fieldset className="formulario formulario-leitura" disabled={somenteLeitura}>
         <CampoTexto rotulo="Nome" valor={entrada.nome} aoMudar={(nome) => editar({ ...entrada, nome }, 'nome')} />
+        <CampoImagem
+          rotulo="Imagem"
+          valor={entrada.imagem}
+          nome={entrada.nome}
+          desativado={somenteLeitura}
+          aoMudar={(id) => editar(comImagem(entrada, 'imagem', id), `imagem-${crypto.randomUUID()}`)}
+        />
         <SeletorVisibilidade
           rotulo="Quem vê"
           valor={entrada.visibilidade}

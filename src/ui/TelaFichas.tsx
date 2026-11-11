@@ -49,6 +49,8 @@ import { numeroNaTela } from './numeros';
 import { idSalvaguarda, PREFIXO_GUIA, valoresDeViagem } from '../core/regras';
 import { useRegras } from './contextoRegras';
 import { CampoNumero, CampoTexto } from './camposFormulario';
+import { CampoImagem, MiniaturaImagem } from './CampoImagem';
+import { comImagem } from '../core/imagens';
 import { comSinal, ExplicacaoValor, type Explicando } from './ExplicacaoValor';
 import { OrganizacaoFicha } from './OrganizacaoFicha';
 import { AssistenteCriacao } from './AssistenteCriacao';
@@ -439,12 +441,15 @@ function EditorFicha({ ficha, compendio, participantes, lojaFichas, lojaRolagens
       }}
     >
       <div className="editor-entrada-topo">
-        <div>
-          <h2>{ficha.nome || '(sem nome)'}</h2>
-          <p className="tela-dica">
-            {ROTULO_TIPO_FICHA[ficha.tipo]}
-            {ficha.tipo !== 'monstro' && ` · nível ${Math.max(1, nivelTotal(ficha))}`}
-          </p>
+        <div className="titulo-com-imagem">
+          {ficha.retrato && <MiniaturaImagem id={ficha.retrato} nome={ficha.nome} tamanho={56} />}
+          <div>
+            <h2>{ficha.nome || '(sem nome)'}</h2>
+            <p className="tela-dica">
+              {ROTULO_TIPO_FICHA[ficha.tipo]}
+              {ficha.tipo !== 'monstro' && ` · nível ${Math.max(1, nivelTotal(ficha))}`}
+            </p>
+          </div>
         </div>
         <div className="tela-cabecalho-acoes">
           {mestre && ficha.tipo !== 'monstro' && (
@@ -517,6 +522,27 @@ function EditorFicha({ ficha, compendio, participantes, lojaFichas, lojaRolagens
           motivo={motivo}
           aoMudar={(nome) => editar({ ...ficha, nome }, 'nome')}
         />
+        <div className="campo-largo ficha-imagens">
+          <CampoImagem
+            rotulo="Retrato"
+            valor={ficha.retrato}
+            nome={ficha.nome}
+            desativado={!podeAgir}
+            motivo={motivo}
+            aoMudar={(id) => editar(comImagem(ficha, 'retrato', id), `retrato-${crypto.randomUUID()}`)}
+          />
+          <CampoImagem
+            rotulo="Token no mapa"
+            valor={ficha.token}
+            nome={ficha.nome}
+            redonda
+            substituta={ficha.retrato}
+            dicaSemImagem={ficha.retrato ? 'Usa o retrato.' : undefined}
+            desativado={!podeAgir}
+            motivo={motivo}
+            aoMudar={(id) => editar(comImagem(ficha, 'token', id), `token-${crypto.randomUUID()}`)}
+          />
+        </div>
         <label className="campo" title={mestre ? undefined : 'Só o mestre muda quem controla a ficha.'}>
           <span>Controlada por</span>
           <select value={ficha.donoId} disabled={!mestre} onChange={(e) => editar({ ...ficha, donoId: e.target.value }, 'dono')}>

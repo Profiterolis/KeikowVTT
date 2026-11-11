@@ -5,13 +5,22 @@ export interface ArmazenamentoLocal {
 }
 
 const NOME_BANCO = 'keikow';
-const VERSAO_BANCO = 1;
+/** Versão 2: a coleção das imagens. */
+const VERSAO_BANCO = 2;
 const COLECAO = 'documentos';
+export const COLECAO_IMAGENS = 'imagens';
 
-function abrirBanco(): Promise<IDBDatabase> {
+/** Abre o banco do app, criando as coleções que faltarem (os documentos já guardados ficam). */
+export function abrirBanco(): Promise<IDBDatabase> {
   return new Promise((resolver, rejeitar) => {
     const pedido = indexedDB.open(NOME_BANCO, VERSAO_BANCO);
-    pedido.onupgradeneeded = () => pedido.result.createObjectStore(COLECAO);
+    pedido.onupgradeneeded = () => {
+      for (const colecao of [COLECAO, COLECAO_IMAGENS]) {
+        if (!pedido.result.objectStoreNames.contains(colecao)) {
+          pedido.result.createObjectStore(colecao);
+        }
+      }
+    };
     pedido.onsuccess = () => resolver(pedido.result);
     pedido.onerror = () => rejeitar(pedido.error);
   });

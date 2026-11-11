@@ -64,6 +64,14 @@ function removerEntrada(estado: EstadoCompendio, entradaId: string): EstadoCompe
   return { entradas };
 }
 
+/**
+ * Pacotes não trazem imagens: ao atualizar uma entrada, a imagem que o mestre pôs nela continua.
+ * Sem isso, toda entrada com imagem pareceria "diferente no pacote".
+ */
+export function comImagemMantida(nova: Entrada, atual: Entrada | undefined): Entrada {
+  return nova.imagem || !atual?.imagem ? nova : { ...nova, imagem: atual.imagem };
+}
+
 function importarEntradas(estado: EstadoCompendio, novas: readonly Entrada[], substituir: boolean): EstadoCompendio {
   const entradas = { ...estado.entradas };
   const vistas = new Set<string>();
@@ -75,8 +83,9 @@ function importarEntradas(estado: EstadoCompendio, novas: readonly Entrada[], su
     }
     vistas.add(entrada.id);
     const existe = entrada.id in entradas;
-    if (!existe || (substituir && JSON.stringify(entradas[entrada.id]) !== JSON.stringify(entrada))) {
-      entradas[entrada.id] = entrada;
+    const nova = comImagemMantida(entrada, entradas[entrada.id]);
+    if (!existe || (substituir && JSON.stringify(entradas[entrada.id]) !== JSON.stringify(nova))) {
+      entradas[entrada.id] = nova;
       alguma = true;
     }
   }

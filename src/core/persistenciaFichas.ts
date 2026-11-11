@@ -19,6 +19,7 @@ import {
 } from './fichas';
 import { ehObjeto, exigir, lerVisibilidade, type ResultadoDe } from './persistencia';
 import { SO_MESTRE } from './visibilidade';
+import { lerImagemOpcional } from './imagens';
 import { METODOS_ATRIBUTOS, type MetodoAtributos } from './regras';
 import { atualizarEntradas, comoResultado, lerEntradas, lerJson, VERSAO_COMPENDIO } from './persistenciaCompendio';
 
@@ -186,6 +187,8 @@ function lerFicha(valor: unknown, onde: string, versaoEntradas: number): Ficha {
     id: texto(valor, 'id', onde),
     tipo: tipo as TipoFicha,
     nome: texto(valor, 'nome', onde),
+    ...lerImagemOpcional(valor, 'retrato', onde),
+    ...lerImagemOpcional(valor, 'token', onde),
     donoId: texto(valor, 'donoId', onde),
     visibilidade: lerVisibilidade(valor.visibilidade, onde),
     edicaoLiberada: booleano(valor, 'edicaoLiberada', onde),

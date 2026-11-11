@@ -21,7 +21,7 @@ import {
   criarCamadaMarcadores,
   criarContornoRevelados,
 } from './camadaMarcadores';
-import { criarCamadaGrupo, type CabecaDoGrupo } from './camadaGrupo';
+import { criarCamadaGrupo, type CabecaDoGrupo, type CarregarImagem } from './camadaGrupo';
 import { trilhaDoGrupo, type PassoPossivel } from '../core/grupo';
 import { criarCamadaTiles } from './camadaTiles';
 
@@ -52,6 +52,8 @@ export interface OpcoesCena {
   readonly aoClicar: (ponto: PontoMundo) => void;
   /** Os membros do grupo, para as cabeças no token. */
   readonly obterCabecasDoGrupo: () => readonly CabecaDoGrupo[];
+  /** O endereço de uma imagem guardada (retratos e tokens). */
+  readonly carregarImagem: CarregarImagem;
 }
 
 interface ControlesCena {
@@ -189,7 +191,7 @@ function montarCena(app: Application, catalogo: Catalogo, opcoes: OpcoesCena): C
   const decoracoes = criarCamadaDecoracoes(catalogo, tiles.container);
   const marcadores = criarCamadaMarcadores();
   const contornoRevelados = criarContornoRevelados();
-  const grupo = criarCamadaGrupo(app.ticker);
+  const grupo = criarCamadaGrupo(app.ticker, opcoes.carregarImagem);
   const selecao = criarSelecaoHex();
   const destaque = criarDestaqueHex();
   camera.addChild(

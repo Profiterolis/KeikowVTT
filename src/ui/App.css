@@ -175,7 +175,8 @@ body {
 
 .tela-cabecalho-acoes button,
 .compendio-novo button,
-.editor-lista button {
+.editor-lista button,
+.campo-imagem-acoes button {
   padding: 6px 12px;
   border: 1px solid #333846;
   border-radius: 4px;
@@ -188,12 +189,14 @@ body {
 
 .tela-cabecalho-acoes button:hover:not(:disabled),
 .compendio-novo button:hover,
-.editor-lista button:hover:not(:disabled) {
+.editor-lista button:hover:not(:disabled),
+.campo-imagem-acoes button:hover:not(:disabled) {
   background: #363b4a;
 }
 
 .tela-cabecalho-acoes button:disabled,
-.editor-lista button:disabled {
+.editor-lista button:disabled,
+.campo-imagem-acoes button:disabled {
   color: #6b6d68;
   cursor: default;
 }
@@ -3172,3 +3175,73 @@ fieldset.formulario {
   font-size: 12px;
 }
 
+
+/* Imagens: miniatura (retrato, token, imagem de entrada) e o campo para escolher. */
+.miniatura-imagem {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 2px solid #3a3f4d;
+  border-radius: 8px;
+  background: #262a35;
+  color: #e6e3da;
+  font-weight: bold;
+}
+
+.miniatura-imagem img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.miniatura-redonda {
+  border-radius: 50%;
+}
+
+.campo-imagem-corpo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.campo-imagem-substituta {
+  opacity: 0.55;
+}
+
+.campo-imagem-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.campo-erro {
+  color: #e05c5c;
+}
+
+.ficha-imagens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.editor-entrada-topo .miniatura-imagem {
+  margin-right: 12px;
+}
+
+.titulo-com-imagem {
+  display: flex;
+  align-items: center;
+}
+
+.painel-grupo-cabeca {
+  overflow: hidden;
+}
+
+.painel-grupo-cabeca img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}

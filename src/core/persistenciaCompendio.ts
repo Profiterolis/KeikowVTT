@@ -1,5 +1,6 @@
 import type { EstadoCompendio } from './compendio';
 import { pesParaMetros, textoParaMetrico } from './unidades';
+import { lerImagemOpcional } from './imagens';
 import {
   ATRIBUTOS,
   CATEGORIAS_ITEM,
@@ -415,6 +416,7 @@ export function lerEntrada(valor: unknown, onde: string): Entrada {
     visibilidade: lerVisibilidade(d.visibilidade, onde),
     efeitos: lista(d, 'efeitos', onde, lerEfeito),
     acoes: lista(d, 'acoes', onde, lerAcao),
+    ...lerImagemOpcional(d, 'imagem', onde),
   };
   const dados = objeto(d.dados, `${onde}: os dados`);
   // O compilador garante que cada tipo recebe os dados certos.

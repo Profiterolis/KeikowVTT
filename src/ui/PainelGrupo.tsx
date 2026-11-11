@@ -16,6 +16,8 @@ import {
   type TipoDeDescanso,
 } from '../core/grupo';
 import type { Ficha } from '../core/fichas';
+import { imagemDoToken } from '../core/imagens';
+import { useEnderecoDaImagem } from './contextoImagens';
 import type { LojaRolagens, RolagemRegistrada } from '../core/rolagens';
 import { ehMestre, VISIVEL_A_TODOS } from '../core/visibilidade';
 import { corDoMembro } from '../render/camadaGrupo';
@@ -39,6 +41,16 @@ interface PainelGrupoProps {
 }
 
 const corCss = (id: string) => `#${corDoMembro(id).toString(16).padStart(6, '0')}`;
+
+/** A cabeça do membro, como no estandarte: a imagem do token (ou do retrato) ou a inicial na cor dele. */
+function CabecaDoMembro({ id, nome, imagem }: { readonly id: string; readonly nome: string; readonly imagem: string | null }) {
+  const endereco = useEnderecoDaImagem(imagem);
+  return (
+    <span className="painel-grupo-cabeca" style={{ background: corCss(id) }} aria-hidden>
+      {endereco ? <img src={endereco} alt="" /> : (nome[0] ?? '?').toUpperCase()}
+    </span>
+  );
+}
 
 /**
  * O painel do grupo: quem viaja junto, quem lidera, o ritmo e o teste do grupo.
@@ -165,9 +177,7 @@ export function PainelGrupo({
             const extra = grupo.visaoExtra[id] ?? 0;
             return (
               <li key={id}>
-                <span className="painel-grupo-cabeca" style={{ background: corCss(id) }} aria-hidden>
-                  {(nomeDaFicha(id)[0] ?? '?').toUpperCase()}
-                </span>
+                <CabecaDoMembro id={id} nome={nomeDaFicha(id)} imagem={fichas[id] ? imagemDoToken(fichas[id]) : null} />
                 <span className="painel-grupo-nome">
                   {id === lider && <span title="Líder">👑 </span>}
                   {nomeDaFicha(id)}

@@ -31,6 +31,10 @@ export interface Ficha {
   readonly id: string;
   readonly tipo: TipoFicha;
   readonly nome: string;
+  /** Imagem da ficha (id em `imagens.ts`). Opcional: fichas antigas não têm, e o formato não mudou de versão. */
+  readonly retrato?: string;
+  /** Imagem do token no mapa, quando é diferente do retrato. Sem ela, o token usa o retrato. */
+  readonly token?: string;
   /** Participante da campanha que controla a ficha: o mestre ou um jogador. */
   readonly donoId: string;
   /** Quem vê a ficha além do dono e do mestre. "Só o mestre" quer dizer que ninguém mais vê. */

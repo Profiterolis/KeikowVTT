@@ -96,6 +96,7 @@ describe('o dono sem a edição liberada', () => {
     ['gastar unidades', (f) => comPilha(f, 'p1', { quantidade: 1 })],
     ['descartar', (f) => semPilha(f, 'p1')],
     ['usos e espaços', (f) => ({ ...f, usosGastos: { furia: 1 }, espacosGastos: [1, 0, 0, 0, 0, 0, 0, 0, 0] })],
+    ['o retrato e o token', (f) => ({ ...f, retrato: `img-${'a'.repeat(64)}`, token: `img-${'b'.repeat(64)}` })],
   ])('pode mudar %s', (_nome, mudar) => {
     expect(anaMuda(mudar)).toEqual({ ok: true });
   });
@@ -113,6 +114,15 @@ describe('o dono sem a edição liberada', () => {
     ['quem vê', (f) => ({ ...f, visibilidade: VISIVEL_A_TODOS }), 'quem vê'],
   ])('não pode mudar %s', (_nome, mudar, trecho) => {
     expect(anaMuda(mudar)).toMatchObject({ ok: false, motivo: expect.stringContaining(trecho) });
+  });
+});
+
+describe('imagens da ficha de outro jogador', () => {
+  it('quem não é o dono não troca o retrato, mesmo vendo a ficha', () => {
+    const antes = mesa();
+    const fb = { ...antes.fichas.fb, visibilidade: VISIVEL_A_TODOS };
+    const visivel = trocar(antes, fb);
+    expect(conferirFichas(visivel, trocar(visivel, { ...fb, retrato: `img-${'c'.repeat(64)}` }), 'ana')).toMatchObject({ ok: false });
   });
 });
 

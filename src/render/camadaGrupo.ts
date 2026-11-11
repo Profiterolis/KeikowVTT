@@ -3,7 +3,7 @@
  * os custos dos passos nos vizinhos e a trilha que só o mestre vê. Só desenha: quem decide
  * para onde o grupo pode ir são as regras em `core/`.
  */
-import { Container, Graphics, Text, type Ticker } from 'pixi.js';
+import { Container, Graphics, Sprite, Text, Texture, type Ticker } from 'pixi.js';
 import { formatarDuracao, type PassoPossivel } from '../core/grupo';
 import { contornoHex, distanciaHex, hexParaMundo, type CoordHex, type PontoMundo } from '../core/hex';
 
@@ -18,10 +18,23 @@ const COR_TRILHA = 0xf0c870;
 export const RAIO_DO_TOKEN = 70;
 const DURACAO_DESLIZE_MS = 450;
 
-/** Um membro no token. Quando as fichas tiverem imagem, o retrato entra no lugar da inicial. */
+/** Um membro no token. Com imagem (o token ou o retrato da ficha), ela entra no lugar da inicial. */
 export interface CabecaDoGrupo {
   readonly id: string;
   readonly nome: string;
+  readonly imagem: string | null;
+}
+
+/** Devolve o endereço de uma imagem guardada, ou `null` se ela não existe. */
+export type CarregarImagem = (id: string) => Promise<string | null>;
+
+function texturaDoEndereco(endereco: string): Promise<Texture | null> {
+  return new Promise((resolver) => {
+    const imagem = new Image();
+    imagem.onload = () => resolver(Texture.from(imagem));
+    imagem.onerror = () => resolver(null);
+    imagem.src = endereco;
+  });
 }
 
 /** Uma cor estável por membro, tirada do id, para cada um ser reconhecível. */
@@ -54,21 +67,49 @@ function desenharEstandarte(): Graphics {
   );
 }
 
-function criarCabeca(cabeca: CabecaDoGrupo, raio: number): Container {
+function criarCabeca(cabeca: CabecaDoGrupo, raio: number, textura: Promise<Texture | null> | null): Container {
   const container = new Container();
-  container.addChild(
-    new Graphics().circle(0, 0, raio).fill(corDoMembro(cabeca.id)).stroke({ width: 3, color: COR_BORDA }),
-  );
+  container.addChild(new Graphics().circle(0, 0, raio).fill(corDoMembro(cabeca.id)));
   const inicial = new Text({
     text: (cabeca.nome.trim()[0] ?? '?').toUpperCase(),
     style: { fontFamily: 'sans-serif', fontSize: raio * 1.1, fontWeight: 'bold', fill: 0xffffff },
   });
   inicial.anchor.set(0.5);
   container.addChild(inicial);
+  const borda = new Graphics().circle(0, 0, raio).stroke({ width: 3, color: COR_BORDA });
+  container.addChild(borda);
+  void textura?.then((carregada) => {
+    // A cabeça pode ter sido trocada enquanto a imagem carregava.
+    if (!carregada || container.destroyed) {
+      return;
+    }
+    const retrato = new Sprite(carregada);
+    retrato.anchor.set(0.5);
+    // Cobre o círculo inteiro, cortando as sobras (como `object-fit: cover`).
+    retrato.scale.set((raio * 2) / Math.min(carregada.width, carregada.height));
+    const mascara = new Graphics().circle(0, 0, raio).fill(0xffffff);
+    retrato.mask = mascara;
+    inicial.visible = false;
+    container.addChildAt(mascara, 1);
+    container.addChildAt(retrato, 2);
+  });
   return container;
 }
 
-export function criarCamadaGrupo(ticker: Ticker) {
+export function criarCamadaGrupo(ticker: Ticker, carregarImagem: CarregarImagem) {
+  // Uma textura por imagem: as cabeças são refeitas a cada mudança nas fichas.
+  const texturas = new Map<string, Promise<Texture | null>>();
+  const texturaDe = (id: string) => {
+    let textura = texturas.get(id);
+    if (!textura) {
+      textura = carregarImagem(id).then((endereco) => (endereco ? texturaDoEndereco(endereco) : null));
+      texturas.set(id, textura);
+      // Uma imagem que ainda não existia (vinda depois de um "Abrir") pode aparecer na próxima vez.
+      void textura.then((carregada) => carregada ?? texturas.delete(id));
+    }
+    return textura;
+  };
+
   const token = new Container();
   token.addChild(desenharEstandarte());
   const cabecas = new Container();
@@ -138,7 +179,7 @@ export function criarCamadaGrupo(ticker: Ticker) {
       const espaco = raio * 1.6;
       const largura = (lista.length - 1) * espaco;
       lista.forEach((cabeca, i) => {
-        const desenho = criarCabeca(cabeca, raio);
+        const desenho = criarCabeca(cabeca, raio, cabeca.imagem ? texturaDe(cabeca.imagem) : null);
         desenho.position.set(i * espaco - largura / 2, -20);
         cabecas.addChild(desenho);
       });

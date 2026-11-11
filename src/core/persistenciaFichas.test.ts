@@ -58,6 +58,16 @@ describe('salvar e ler fichas', () => {
     expect(desserializarFichas(serializarFichas(estado))).toEqual({ ok: true, estado });
   });
 
+  it('guarda o retrato e o token, e recusa uma imagem com id estranho', () => {
+    const estado = exemplo();
+    const comImagens: EstadoFichas = {
+      fichas: { ...estado.fichas, h1: { ...estado.fichas.h1, retrato: `img-${'1'.repeat(64)}`, token: `img-${'2'.repeat(64)}` } },
+    };
+    expect(desserializarFichas(serializarFichas(comImagens))).toEqual({ ok: true, estado: comImagens });
+    const estranha = serializarFichas(comImagens).replace(`img-${'1'.repeat(64)}`, '../segredo.png');
+    expect(desserializarFichas(estranha)).toMatchObject({ ok: false });
+  });
+
   it('o arquivo do botão Salvar traz as fichas; arquivos antigos não têm', () => {
     const estado = exemplo();
     const conteudo = { campanha: criarCampanhaInicial(), registro: [] };

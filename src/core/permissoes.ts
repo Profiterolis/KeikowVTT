@@ -124,6 +124,8 @@ const COM_EDICAO_LIBERADA: readonly [keyof Ficha, string][] = [
 /** Campos do dia a dia, que o dono muda sempre. Quem recebe um presente não muda nenhum deles. */
 const DO_DIA_A_DIA: readonly (keyof Ficha)[] = [
   'nome',
+  'retrato',
+  'token',
   'notas',
   'moedas',
   'secoes',

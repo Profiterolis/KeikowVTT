@@ -48,6 +48,14 @@ Ideias aleatórias para o KeikowVTT:
 - Transformações que mudam a viagem: um druida em forma animal viajando mais rápido (ou voando e vendo mais longe). Depende de efeitos temporários, que o app ainda não tem; hoje o mestre usa a visão extra do grupo.
 - Equipamento inicial por kits no assistente de criação: em vez de procurar qualquer item do compêndio, o jogador escolhe entre kits montados pelo mestre (liga com a ideia dos "Kits de itens"). Perícias, antecedentes ou classes podem dar equipamentos extras. (Feito na Fase 4.6.)
 - Sistema de notificações na tela: avisos que aparecem para cada participante, como "a eleição terminou: Lyra lidera" para todos, ou "Thorin tentou te furtar" só para quem percebeu o furto (ações noturnas). Cada aviso diz quem pode vê-lo, como o resto do app; no online, chegam na hora para cada jogador. (Feito na Fase 5.5, junto com a noite no acampamento: ações noturnas, furto, estudo e vigia.)
+- Mapas de instância vindos de outros programas: imagem de fundo com grid ajustável (Inkarnate, Dungeon Scrawl) e, melhor ainda, arquivos Universal VTT (`.dd2vtt`/`.uvtt`, do Dungeondraft ou do Dungeon Alchemist), que trazem imagem, paredes, portas e luzes num arquivo só. (Para a Fase 6.)
+- Tokens animados a partir de folhas de sprites do Universal LPC Spritesheet Generator (andar, atacar, conjurar), com os créditos de cada peça guardados e mostrados na tela Créditos; tokens de imagem parada também servem. Talvez embutir o gerador no app no futuro.
+- Itens viram tokens no mapa de instância: arrastar um item do inventário (sai da ficha) ou do compêndio (cria uma cópia nova) até o lugar onde ele deve ficar. Documentos, armas e qualquer item podem ficar espalhados, escondidos até alguém achar, e os jogadores os pegam para o inventário se tiverem carga sobrando. (Para a Fase 6.)
+- Itens de armazenamento: baús, armários e afins guardam outros itens; podem ser trancados. Liga com a ideia dos recipientes na ficha.
+- Veículos com armazenamento: uma carroça ou um barco carregam itens e peso, separados da carga dos personagens. Liga com a aba de veículos e montarias.
+- Instâncias universais, que servem a qualquer hex, além das presas a um hex. Futuro: ao entrar num hex novo, o líder rola o que o grupo encontra, sorteado entre o que existe naquela região (numa floresta: ruínas, dungeon élfica...), o que pode abrir uma instância.
+- Camadas no mapa-mundi (ilhas flutuantes): um botão "levanta a visão" para a camada de cima; a de baixo continua aparecendo, borrada e com nuvens passando; os hexes voadores usam o `hexUnderDirt00.png` para mostrar espessura. Quem está numa ilha vê a camada de baixo inteira, como se voasse. O subterrâneo pode ser um mapa separado, sem precisar de camada.
+- Cena inicial: ao preparar a campanha ou a sessão, o mestre escolhe onde os jogadores começam (uma instância ou o mapa-mundi). (Fase 6, passo 3.)
 
 ## Deixado para depois nos planos já feitos
 

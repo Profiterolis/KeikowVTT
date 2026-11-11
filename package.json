@@ -12,6 +12,7 @@
     "srd": "node --import ./scripts/registrar-ts.mjs scripts/srd/gerar-srd.mjs"
   },
   "dependencies": {
+    "fflate": "^0.8.2",
     "pixi-viewport": "^7.0.2",
     "pixi.js": "^8.22.0",
     "react": "^19.3.1",

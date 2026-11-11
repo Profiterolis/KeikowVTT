@@ -295,6 +295,8 @@ export interface EntradaDe<T extends TipoEntrada> {
   readonly tipo: T;
   readonly nome: string;
   readonly descricao: string;
+  /** Imagem da entrada (id em `imagens.ts`), como a de um item que vira token no mapa. Opcional, sem mudar a versão. */
+  readonly imagem?: string;
   readonly etiquetas: readonly string[];
   readonly origem: OrigemEntrada;
   readonly visibilidade: Visibilidade;
