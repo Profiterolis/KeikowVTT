@@ -80,6 +80,11 @@ interface ControlesCena {
   atualizarGrupo(): void;
   /** Leva a câmera, deslizando, até o hex do grupo. */
   centralizarNoGrupo(): void;
+  /**
+   * Leva a câmera, deslizando, até um hex, como o de uma linha do diário. `desvioNaTela`
+   * (em pixels) põe o hex mais à esquerda, para ele não ficar atrás de um painel à direita.
+   */
+  centralizarEm(coord: CoordHex, desvioNaTela?: number): void;
   cancelarAssinatura(): void;
 }
 
@@ -140,6 +145,7 @@ export function createMapScene(container: HTMLElement, opcoes: OpcoesCena): Cena
     moverTokenVisual: (ponto) => controles?.moverTokenVisual(ponto),
     atualizarGrupo: () => controles?.atualizarGrupo(),
     centralizarNoGrupo: () => controles?.centralizarNoGrupo(),
+    centralizarEm: (coord, desvioNaTela) => controles?.centralizarEm(coord, desvioNaTela),
     destruir() {
       disposed = true;
       controles?.cancelarAssinatura();
@@ -248,6 +254,13 @@ function montarCena(app: Application, catalogo: Catalogo, opcoes: OpcoesCena): C
   };
   // Um mapa guardado pode estar longe da origem e parecer vazio ao abrir.
   centralizarNoMapa();
+
+  const deslizarAte = (coord: CoordHex, desvioNaTela = 0) => {
+    const centro = hexParaMundo(coord);
+    // O desvio é em pixels da tela; no mundo, depende do zoom.
+    const x = centro.x + desvioNaTela / camera.scale.x;
+    camera.animate({ position: { x, y: centro.y }, time: 450, ease: 'easeInOutSine', removeOnInterrupt: true });
+  };
 
   const mundoDoEvento = (evento: PointerEvent): PontoMundo => {
     const { x, y } = camera.toWorld(evento.offsetX, evento.offsetY);
@@ -381,10 +394,10 @@ function montarCena(app: Application, catalogo: Catalogo, opcoes: OpcoesCena): C
     centralizarNoGrupo: () => {
       const { posicao } = opcoes.lojaGrupo.obterEstado();
       if (posicao) {
-        const centro = hexParaMundo(posicao);
-        camera.animate({ position: { x: centro.x, y: centro.y }, time: 450, ease: 'easeInOutSine', removeOnInterrupt: true });
+        deslizarAte(posicao);
       }
     },
+    centralizarEm: deslizarAte,
     definirModoJogador: (participanteId, alcance = 1) => {
       jogadorId = participanteId;
       alcanceDoJogador = alcance;

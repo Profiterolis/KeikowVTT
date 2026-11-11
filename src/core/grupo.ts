@@ -57,7 +57,9 @@ export type AcontecimentoDaViagem =
       readonly nomeDoLugar: string;
     }
   | { readonly tipo: 'avancou'; readonly ateAManha: boolean }
-  | { readonly tipo: 'acertouRelogio' };
+  | { readonly tipo: 'acertouRelogio' }
+  /** Uma anotação livre do mestre, como "emboscada de goblins"; não mexe no relógio. */
+  | { readonly tipo: 'anotou'; readonly texto: string };
 
 /** Uma linha do diário de viagem, que só o mestre vê. */
 export interface EntradaDaViagem {
@@ -145,6 +147,8 @@ export type AcaoGrupo =
   /** Até a próxima hora da partida, sem acampar. Zera as horas do dia. */
   | { readonly tipo: 'AvancarAteAManha' }
   | { readonly tipo: 'AcertarRelogio'; readonly relogio: number }
+  /** Só o mestre: escreve uma linha no diário, no momento atual. */
+  | { readonly tipo: 'AnotarNaViagem'; readonly texto: string }
   /** Desfaz o último acontecimento do diário, com a posição e o relógio. */
   | { readonly tipo: 'DesfazerViagem' }
   | { readonly tipo: 'CarregarGrupo'; readonly estado: EstadoGrupo };
@@ -329,6 +333,14 @@ export function trilhaDoGrupo(estado: EstadoGrupo): CoordHex[] {
 export function grupoNumPovoado(estado: EstadoGrupo, contexto: ContextoDoGrupo): boolean {
   const hex = estado.posicao ? hexEm(contexto.obterMapa(), estado.posicao) : undefined;
   return hex ? tagsDoTile(contexto.obterViagem(), hex.terreno).some((t) => t.id === 'povoado') : false;
+}
+
+/**
+ * O grupo como um participante pode recebê-lo: o diário de viagem é só do mestre, então os
+ * jogadores recebem o grupo sem ele. No online, é isto que o servidor manda a cada jogador.
+ */
+export function grupoVistoPor(estado: EstadoGrupo, participanteId: string): EstadoGrupo {
+  return ehMestre(participanteId) || estado.historico.length === 0 ? estado : { ...estado, historico: [] };
 }
 
 // ---------- Permissões ----------
@@ -601,6 +613,19 @@ export function aplicarAcaoGrupo(
         comAcontecimento(
           { tipo: 'acertouRelogio' },
           { posicao: estado.posicao, relogio, viajadoHoje: estado.viajadoHoje },
+        ),
+      );
+    }
+
+    case 'AnotarNaViagem': {
+      const texto = acao.texto.trim();
+      if (texto === '') {
+        return recusa('Escreva alguma coisa para anotar no diário.');
+      }
+      return ok(
+        comAcontecimento(
+          { tipo: 'anotou', texto },
+          { posicao: estado.posicao, relogio: estado.relogio, viajadoHoje: estado.viajadoHoje },
         ),
       );
     }

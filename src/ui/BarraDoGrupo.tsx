@@ -15,6 +15,9 @@ interface BarraDoGrupoProps {
   readonly descansoPendente: boolean;
   /** Leva a câmera até o grupo, para quem se perdeu arrastando o mapa. */
   readonly aoIrAteOGrupo: () => void;
+  /** Só o mestre: o diário de viagem. */
+  readonly diarioAberto: boolean;
+  readonly aoAlternarDiario: () => void;
 }
 
 /** Avanços rápidos de tempo do mestre, em minutos. */
@@ -37,6 +40,8 @@ export function BarraDoGrupo({
   aoAlternarPainel,
   descansoPendente,
   aoIrAteOGrupo,
+  diarioAberto,
+  aoAlternarDiario,
 }: BarraDoGrupoProps) {
   const [acertando, setAcertando] = useState(false);
   const limite = viagem.horasPorDia * 60;
@@ -104,6 +109,9 @@ export function BarraDoGrupo({
             onClick={() => lojaGrupo.despachar({ tipo: 'DesfazerViagem' })}
           >
             Desfazer
+          </button>
+          <button type="button" aria-pressed={diarioAberto} title="O diário de viagem: só o mestre vê" onClick={aoAlternarDiario}>
+            📜 Diário
           </button>
         </div>
       )}

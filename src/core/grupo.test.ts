@@ -8,6 +8,7 @@ import {
   passosPossiveis,
   podeConduzir,
   trilhaDoGrupo,
+  grupoVistoPor,
   criarLojaGrupo,
   fimDoDescansoLongo,
   formatarRelogio,
@@ -484,5 +485,28 @@ describe('descansos', () => {
     expect(recusas[0]).toContain('povoado');
     expect(doLider.despachar(longo)).toBe(true);
     expect(aplicar(viajando, abrigo).historico.at(-1)?.acontecimento).toMatchObject({ lugar: 'abrigo' });
+  });
+});
+
+describe('anotações e diário só do mestre', () => {
+  it('o mestre anota no diário sem mexer no relógio; anotação vazia é recusada', () => {
+    const anotou = aplicar(viajando, { tipo: 'AnotarNaViagem', texto: '  emboscada de goblins ' });
+    expect(anotou.historico.at(-1)?.acontecimento).toEqual({ tipo: 'anotou', texto: 'emboscada de goblins' });
+    expect(anotou.relogio).toBe(viajando.relogio);
+    expect(motivo(viajando, { tipo: 'AnotarNaViagem', texto: '   ' })).toBe('Escreva alguma coisa para anotar no diário.');
+    expect(aplicar(anotou, { tipo: 'DesfazerViagem' }).historico).toEqual([]);
+  });
+
+  it('só o mestre anota, nem quem controla o líder', () => {
+    const daAna = criarLojaGrupo(viajando, { obterAutorId: () => 'j-ana' }, contexto);
+    expect(daAna.despachar({ tipo: 'AnotarNaViagem', texto: 'oi' })).toBe(false);
+  });
+
+  it('os jogadores recebem o grupo sem o diário', () => {
+    const andou = aplicar(viajando, { tipo: 'MoverGrupo', para: B });
+    expect(grupoVistoPor(andou, 'mestre').historico).toHaveLength(1);
+    const daAna = grupoVistoPor(andou, 'j-ana');
+    expect(daAna.historico).toEqual([]);
+    expect(daAna.posicao).toEqual(B);
   });
 });

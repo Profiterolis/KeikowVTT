@@ -2859,3 +2859,114 @@ fieldset.formulario {
 .regras-tile-mao {
   color: #c9b8ff;
 }
+
+/* Diário de viagem: mesmo lugar dos painéis do grupo e do hex. */
+.painel-diario {
+  width: 360px;
+}
+
+.painel-diario h3 small {
+  color: #8f9199;
+  font-weight: normal;
+}
+
+.painel-diario-anotar {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  margin-top: 10px;
+}
+
+.painel-diario-anotar textarea {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid #333846;
+  border-radius: 4px;
+  background: #14161c;
+  color: #e6e3da;
+  font: inherit;
+  font-size: 12px;
+  resize: vertical;
+}
+
+.painel-diario-filtros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 10px 0 6px;
+  color: #b9bcc6;
+  font-size: 12px;
+}
+
+.painel-diario-filtros label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.painel-diario-aviso {
+  color: #8fbf8f;
+  font-size: 11px;
+}
+
+.painel-diario-linhas {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.painel-diario .painel-diario-linhas button {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 6px;
+  border-color: transparent;
+  background: transparent;
+  text-align: left;
+}
+
+.painel-diario .painel-diario-linhas button:hover:not(:disabled) {
+  border-color: #333846;
+  background: #252935;
+}
+
+.painel-diario .painel-diario-linhas button:disabled {
+  color: inherit;
+}
+
+.painel-diario-icone {
+  flex: none;
+  width: 18px;
+}
+
+.painel-diario-texto {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.painel-diario-texto small {
+  color: #8f9199;
+  font-size: 11px;
+}
+
+.painel-diario-hora {
+  color: #f0c870;
+  font-size: 11px;
+}
+
+.painel-diario-texto .painel-diario-autor {
+  color: #6f727b;
+}
+
+.painel-diario-rodape {
+  margin-top: 14px;
+  color: #6f727b;
+  font-size: 11px;
+}

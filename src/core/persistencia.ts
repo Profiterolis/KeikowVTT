@@ -177,6 +177,9 @@ function lerAcontecimento(dado: unknown, onde: string): AcontecimentoDaViagem {
       return { tipo: 'descansou', descanso: dado.descanso, lugar: dado.lugar, nomeDoLugar: dado.nomeDoLugar };
     case 'acertouRelogio':
       return { tipo: dado.tipo };
+    case 'anotou':
+      exigir(typeof dado.texto === 'string', `${onde}: a anotação é inválida.`);
+      return { tipo: 'anotou', texto: dado.texto };
     case 'avancou':
       exigir(typeof dado.ateAManha === 'boolean', `${onde}: o avanço do tempo é inválido.`);
       return { tipo: 'avancou', ateAManha: dado.ateAManha };

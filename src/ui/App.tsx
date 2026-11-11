@@ -18,6 +18,7 @@ import { criarLojaRegistro, type LojaRegistro } from '../core/registro';
 import {
   alcanceDaVisao,
   criarLojaGrupo,
+  grupoVistoPor,
   membrosPresentes,
   motivoParaNaoConduzir,
   passosPossiveis,
@@ -28,6 +29,7 @@ import {
 } from '../core/grupo';
 import { ExplicacaoDoPasso } from './ExplicacaoDoPasso';
 import { BarraDoGrupo } from './BarraDoGrupo';
+import { PainelDiario } from './PainelDiario';
 import { PainelGrupo } from './PainelGrupo';
 import { membroNaViagem } from '../core/calculoDaFicha';
 import { criarLojaMapa, type LojaMapa } from '../core/loja';
@@ -258,7 +260,8 @@ function Editor({
 
   const [hexSelecionado, setHexSelecionado] = useState<CoordHex | null>(null);
   const [passoSobMouse, setPassoSobMouse] = useState<PassoPossivel | null>(null);
-  const [painelGrupoAberto, setPainelGrupoAberto] = useState(false);
+  /** O painel do grupo e o diário ocupam o lugar do painel do hex: abrir um fecha os outros. */
+  const [painelLateral, setPainelLateral] = useState<'grupo' | 'diario' | null>(null);
   const [agindoComoId, setAgindoComoId] = useState(sessao.autorId);
   const [telaAberta, setTelaAberta] = useState<Tela | null>(null);
   const [mapaTravado, setMapaTravado] = useState(lerMapaTravado);
@@ -823,11 +826,11 @@ function Editor({
             </div>
           )}
           <BarraDoGrupo
-            grupo={grupo}
+            grupo={grupoVistoPor(grupo, agindoComoId)}
             lojaGrupo={lojaGrupo}
             viagem={regras.viagem}
             mestre={!modoJogador}
-            painelAberto={painelGrupoAberto}
+            painelAberto={painelLateral === 'grupo'}
             descansoPendente={Object.keys(grupo.descansosPendentes).some(
               (id) => membrosPresentes(grupo, contextoGrupo).includes(id) && fichas.fichas[id]?.donoId === agindoComoId,
             )}
@@ -835,11 +838,26 @@ function Editor({
             aoAlternarPainel={() => {
               // O painel do grupo e o do hex ocupam o mesmo lugar: um fecha o outro.
               setHexSelecionado(null);
-              setPainelGrupoAberto(!painelGrupoAberto);
+              setPainelLateral(painelLateral === 'grupo' ? null : 'grupo');
+            }}
+            diarioAberto={painelLateral === 'diario'}
+            aoAlternarDiario={() => {
+              setHexSelecionado(null);
+              setPainelLateral(painelLateral === 'diario' ? null : 'diario');
             }}
           />
         </div>
-        {painelGrupoAberto && !hexSelecionado && (
+        {painelLateral === 'diario' && !hexSelecionado && !modoJogador && (
+          <PainelDiario
+            loja={loja}
+            lojaGrupo={lojaGrupo}
+            participantes={campanha.participantes}
+            // Metade da largura do painel, para o hex aparecer ao lado dele, e não atrás.
+            aoIrAte={(coord) => cenaRef.current?.centralizarEm(coord, 190)}
+            aoFechar={() => setPainelLateral(null)}
+          />
+        )}
+        {painelLateral === 'grupo' && !hexSelecionado && (
           <PainelGrupo
             lojaGrupo={lojaGrupo}
             lojaFichas={lojaFichas}
@@ -847,7 +865,7 @@ function Editor({
             contexto={contextoGrupo}
             participantes={campanha.participantes}
             autorId={agindoComoId}
-            aoFechar={() => setPainelGrupoAberto(false)}
+            aoFechar={() => setPainelLateral(null)}
           />
         )}
         {hexSelecionado && modoJogador && (

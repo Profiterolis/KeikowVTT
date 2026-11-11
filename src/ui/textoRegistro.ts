@@ -37,6 +37,7 @@ const DESCRICOES: Readonly<Record<TipoEvento, (quantidade: number) => string>> =
   AvancarTempo: fixo('avançou o tempo'),
   AvancarAteAManha: fixo('avançou o tempo até a manhã'),
   AcertarRelogio: fixo('acertou o relógio'),
+  AnotarNaViagem: fixo('anotou no diário de viagem'),
   DesfazerViagem: fixo('desfez o último acontecimento da viagem'),
   CarregarGrupo: fixo('abriu o grupo de um arquivo'),
   RenomearCampanha: fixo('renomeou a campanha'),

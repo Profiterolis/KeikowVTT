@@ -121,6 +121,7 @@ describe('o grupo no arquivo (versão 4)', () => {
       },
       { id: 4, autorId: 'mestre', acontecimento: { tipo: 'avancou', ateAManha: true }, antes: { posicao: { q: 1, r: 0 }, relogio: 2000, viajadoHoje: 90 }, relogioDepois: 2000 },
       { id: 5, autorId: 'mestre', acontecimento: { tipo: 'acertouRelogio' }, antes: { posicao: { q: 1, r: 0 }, relogio: 2000, viajadoHoje: 90 }, relogioDepois: 2000 },
+      { id: 6, autorId: 'mestre', acontecimento: { tipo: 'anotou', texto: 'Emboscada' }, antes: { posicao: { q: 1, r: 0 }, relogio: 2000, viajadoHoje: 90 }, relogioDepois: 2000 },
     ],
   };
 
