@@ -24,6 +24,7 @@ import {
   NOME_DO_VALOR_NO_MODIFICADOR,
   NOME_NIVEL_DA_CLASSE,
   rotuloDoNome,
+  valoresDeViagem,
   type Regras,
 } from './regras';
 
@@ -136,6 +137,7 @@ export function criarCalculo(regras: Regras, entrada: EntradaDoCalculo): Calculo
   const valores = new Map(regras.valores.map((v) => [v.id, v]));
   const pericias = new Map(regras.pericias.map((p) => [p.id, p]));
   const salvaguardas = new Map(ATRIBUTOS.map((a) => [idSalvaguarda(a), a]));
+  const deViagem = new Map(valoresDeViagem(regras).map((v) => [v.id, v]));
   const efeitosPorAlvo = new Map<string, EfeitoAtivo[]>();
   for (const ativo of entrada.efeitos ?? []) {
     const alvo = normalizarNome(ativo.efeito.alvo.trim());
@@ -150,6 +152,7 @@ export function criarCalculo(regras: Regras, entrada: EntradaDoCalculo): Calculo
     ehAtributo(nome) ||
     nome in ENTRADAS_DA_FICHA ||
     nome in VARIAVEIS_DO_EQUIPAMENTO ||
+    deViagem.has(nome) ||
     valores.has(nome) ||
     pericias.has(nome) ||
     salvaguardas.has(nome);
@@ -222,6 +225,10 @@ export function criarCalculo(regras: Regras, entrada: EntradaDoCalculo): Calculo
       const informado = entrada.equipamento?.[nome];
       const valor = informado?.valor ?? doEquipamento.padrao;
       return { ok: true, valor, base: valor, partes: [{ texto: informado?.origem ?? 'nada equipado', valor }], ajustes: [] };
+    }
+    const daViagem = deViagem.get(nome);
+    if (daViagem) {
+      return comEfeitos(nome, daViagem.padrao, [{ texto: 'padrão', valor: daViagem.padrao }]);
     }
     if (ehAtributo(nome)) {
       const base = entrada.atributos[nome];

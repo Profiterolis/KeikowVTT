@@ -15,7 +15,8 @@ import { criarLojaFichas, type LojaFichas } from '../core/fichas';
 import { criarLojaRolagens, type LojaRolagens } from '../core/rolagens';
 import { criarLojaRegras, type LojaRegras } from '../core/regrasDaCampanha';
 import { criarLojaRegistro, type LojaRegistro } from '../core/registro';
-import { criarLojaGrupo, type LojaGrupo } from '../core/grupo';
+import { alcanceDaVisao, criarLojaGrupo, type ContextoDoGrupo, type LojaGrupo } from '../core/grupo';
+import { membroNaViagem } from '../core/calculoDaFicha';
 import { criarLojaMapa, type LojaMapa } from '../core/loja';
 import type { EstadoMapa } from '../core/mapa';
 import type { Manifesto } from '../core/manifesto';
@@ -75,6 +76,8 @@ function ehCampoDeTexto(alvo: EventTarget | null): alvo is HTMLElement {
 interface EditorCarregado {
   readonly loja: LojaMapa;
   readonly lojaGrupo: LojaGrupo;
+  /** O que o grupo consulta das outras lojas: mapa, regras e fichas. */
+  readonly contextoGrupo: ContextoDoGrupo;
   readonly lojaCampanha: LojaCampanha;
   readonly lojaRegistro: LojaRegistro;
   readonly lojaCompendio: LojaCompendio;
@@ -134,14 +137,20 @@ async function iniciarEditor(): Promise<EditorCarregado> {
     jogadoresCriam: lojaRegras.obterEstado().criacao.jogadoresCriam,
   }));
   // O grupo consulta o mapa (terreno de cada passo), as regras de viagem e quem controla cada ficha.
-  const lojaGrupo = criarLojaGrupo(mapa?.grupo, opcoesRegistro, {
+  const contextoGrupo: ContextoDoGrupo = {
     obterMapa: loja.obterEstado,
     obterViagem: () => lojaRegras.obterEstado().viagem,
     obterDonoDaFicha: (fichaId) => lojaFichas.obterEstado().fichas[fichaId]?.donoId ?? null,
-  });
+    obterMembroNaViagem: (fichaId) => {
+      const ficha = lojaFichas.obterEstado().fichas[fichaId];
+      return ficha ? membroNaViagem(ficha, lojaRegras.obterEstado()) : null;
+    },
+  };
+  const lojaGrupo = criarLojaGrupo(mapa?.grupo, opcoesRegistro, contextoGrupo);
   return {
     loja,
     lojaGrupo,
+    contextoGrupo,
     lojaCampanha: criarLojaCampanha(campanha?.campanha, opcoesRegistro),
     lojaRegistro,
     lojaCompendio: criarLojaCompendio(compendio?.estado, opcoesRegistro),
@@ -165,6 +174,25 @@ function avisoDeImagensFaltando(estado: EstadoMapa, manifesto: Manifesto): Mensa
     tipo: 'erro',
     texto: `Imagens não encontradas, que não serão desenhadas: ${faltando.join(', ')}`,
   };
+}
+
+const CHAVE_MAPA_TRAVADO = 'keikow.mapaTravado';
+
+/** O mapa começa travado; o navegador lembra a última escolha do mestre. */
+function lerMapaTravado(): boolean {
+  try {
+    return localStorage.getItem(CHAVE_MAPA_TRAVADO) !== 'nao';
+  } catch {
+    return true;
+  }
+}
+
+function gravarMapaTravado(travado: boolean): void {
+  try {
+    localStorage.setItem(CHAVE_MAPA_TRAVADO, travado ? 'sim' : 'nao');
+  } catch {
+    // Sem o armazenamento, a escolha só vale até fechar a página.
+  }
 }
 
 /** Garante um único carregamento, mesmo que o React monte o componente duas vezes. */
@@ -195,6 +223,7 @@ export function App() {
 function Editor({
   loja,
   lojaGrupo,
+  contextoGrupo,
   lojaCampanha,
   lojaRegistro,
   lojaCompendio,
@@ -217,9 +246,11 @@ function Editor({
   const [hexSelecionado, setHexSelecionado] = useState<CoordHex | null>(null);
   const [agindoComoId, setAgindoComoId] = useState(sessao.autorId);
   const [telaAberta, setTelaAberta] = useState<Tela | null>(null);
+  const [mapaTravado, setMapaTravado] = useState(lerMapaTravado);
   const grupo = useSyncExternalStore(lojaGrupo.assinar, lojaGrupo.obterEstado);
   const campanha = useSyncExternalStore(lojaCampanha.assinar, lojaCampanha.obterEstado);
   const regras = useSyncExternalStore(lojaRegras.assinar, lojaRegras.obterEstado);
+  const fichas = useSyncExternalStore(lojaFichas.assinar, lojaFichas.obterEstado);
   const agindoComo = campanha.participantes.find((p) => p.id === agindoComoId);
   /** Agindo como um jogador, o mapa mostra só o que ele vê e nada pode ser editado. */
   const modoJogador = !ehMestre(agindoComoId);
@@ -272,13 +303,32 @@ function Editor({
   }, [ferramenta]);
 
   useEffect(() => {
+    controlador?.definirTravado(mapaTravado);
+    if (mapaTravado && (ferramenta.tipo === 'colocar' || ferramenta.tipo === 'apagar')) {
+      setFerramenta(SEM_FERRAMENTA);
+    }
+    gravarMapaTravado(mapaTravado);
+  }, [controlador, mapaTravado, ferramenta.tipo]);
+
+  useEffect(() => {
     controlador?.definirSomenteLeitura(modoJogador);
     if (modoJogador) {
       controlador?.definirFerramenta(SEM_FERRAMENTA);
       setFerramenta(SEM_FERRAMENTA);
     }
-    cenaRef.current?.definirModoJogador(modoJogador ? agindoComoId : null);
-  }, [controlador, modoJogador, agindoComoId]);
+  }, [controlador, modoJogador]);
+
+  // Cada jogador vê até onde os personagens dele enxergam: quem voa vê mais longe que o grupo.
+  const alcanceDoJogador = useMemo(
+    () => (modoJogador ? alcanceDaVisao(grupo, agindoComoId, contextoGrupo) : 1),
+    // As fichas e as regras mudam o alcance (uma luneta, um efeito novo), mesmo sem serem lidas aqui.
+    [modoJogador, grupo, agindoComoId, contextoGrupo, fichas, regras],
+  );
+
+  useEffect(() => {
+    controlador?.definirAlcanceDaVisao(alcanceDoJogador);
+    cenaRef.current?.definirModoJogador(modoJogador ? agindoComoId : null, alcanceDoJogador);
+  }, [controlador, modoJogador, agindoComoId, alcanceDoJogador]);
 
   const selecionarFerramenta = useCallback(
     (nova: Ferramenta) => {
@@ -574,6 +624,19 @@ function Editor({
         )}
         {!modoJogador && (
           <>
+        <button
+          type="button"
+          className="trava-mapa"
+          aria-pressed={!mapaTravado}
+          title={
+            mapaTravado
+              ? 'Clique para editar terreno e decorações'
+              : 'Clique para travar o mapa e evitar mudanças sem querer durante o jogo'
+          }
+          onClick={() => setMapaTravado(!mapaTravado)}
+        >
+          {mapaTravado ? '🔒 Mapa travado' : '✏️ Editando o mapa'}
+        </button>
         <details className="ajuda-bloco">
           <summary>Ajuda</summary>
           <dl className="ajuda">
@@ -630,6 +693,7 @@ function Editor({
           aoMensagem={setMensagem}
         />
         <div className="ferramentas">
+          {!mapaTravado && (
           <button
             type="button"
             aria-pressed={ferramenta.tipo === 'apagar'}
@@ -639,6 +703,7 @@ function Editor({
           >
             Borracha
           </button>
+          )}
           <button type="button" disabled={!podeDesfazer} onClick={loja.desfazer} title="Ctrl+Z">
             Desfazer
           </button>
@@ -677,7 +742,10 @@ function Editor({
           {hexSobMouse ? `Hex: q ${hexSobMouse.q}, r ${hexSobMouse.r}` : 'Hex: —'}
         </p>
         {mensagem && <p className={`mensagem-${mensagem.tipo}`}>{mensagem.texto}</p>}
-        {manifesto && (
+        {mapaTravado && (
+          <p className="tela-dica">Mapa travado: terreno e decorações não mudam. Revelar, Ocultar e Grupo continuam.</p>
+        )}
+        {manifesto && !mapaTravado && (
           <Paleta
             manifesto={manifesto}
             assetSelecionado={assetSelecionado}
@@ -717,6 +785,7 @@ function Editor({
             lojaGrupo={lojaGrupo}
             participanteId={agindoComoId}
             coord={hexSelecionado}
+            alcance={alcanceDoJogador}
             aoFechar={() => setHexSelecionado(null)}
           />
         )}

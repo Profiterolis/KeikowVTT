@@ -61,6 +61,13 @@ export function vizinhosHex({ q, r }: CoordHex): CoordHex[] {
   return DIRECOES_VIZINHAS.map(([dq, dr]) => ({ q: q + dq, r: r + dr }));
 }
 
+/** Quantos passos de vizinho em vizinho separam dois hexes. */
+export function distanciaHex(a: CoordHex, b: CoordHex): number {
+  const dq = a.q - b.q;
+  const dr = a.r - b.r;
+  return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2;
+}
+
 /** Os seis cantos do hex como lista [x1, y1, x2, y2, ...], em pixels do mundo. */
 export function contornoHex(coord: CoordHex): number[] {
   const { x, y } = hexParaMundo(coord);

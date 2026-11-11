@@ -197,6 +197,36 @@ describe('efeitos', () => {
   });
 });
 
+describe('valores de viagem', () => {
+  it('começam no padrão e mudam por efeitos, como uma montaria ou um guia', () => {
+    const sem = calcular();
+    expect(sem.valor('fator_viagem')).toMatchObject({ ok: true, valor: 1 });
+    expect(sem.valor('visao_hexes')).toMatchObject({ ok: true, valor: 1 });
+    expect(sem.valor('guia_floresta')).toMatchObject({ ok: true, valor: 0 });
+    const com = calcular({
+      ...guerreira,
+      efeitos: [
+        efeito('Cavalo', 'fator_viagem', 'minimo', '1.5'),
+        efeito('Luneta', 'visao_hexes', 'somar', '1'),
+        efeito('Exploração Natural', 'guia_floresta', 'minimo', '1'),
+      ],
+    });
+    expect(com.valor('fator_viagem')).toMatchObject({ ok: true, valor: 1.5 });
+    expect(com.valor('visao_hexes')).toMatchObject({ ok: true, valor: 2 });
+    expect(com.valor('guia_floresta')).toMatchObject({ ok: true, valor: 1 });
+    expect(com.rotulo('guia_floresta')).toBe('Guia em floresta (1 sim, 0 não)');
+  });
+
+  it('não há guia para terreno intransponível, e os nomes não podem ser tomados por valores novos', () => {
+    expect(calcular().valor('guia_agua').ok).toBe(false);
+    const regras = {
+      ...REGRAS_PADRAO,
+      valores: [...REGRAS_PADRAO.valores, { id: 'fator_viagem', nome: 'Outro', formula: '1', descricao: '' }],
+    };
+    expect(conferirRegras(regras).map((p) => p.erro).join(' ')).toContain('já é usado');
+  });
+});
+
 describe('valores fixos', () => {
   it('substituem a regra, e os efeitos continuam valendo', () => {
     const c = calcular({

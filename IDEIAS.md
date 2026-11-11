@@ -44,6 +44,8 @@ Ideias aleatórias para o KeikowVTT:
 - Talvez tirar o peso das moedas (hoje cada moeda pesa 0,01 kg; dá para zerar na tela Regras).
 - Troca entre jogadores estilo Ragnarok Online (fase Online): clicar no card de outro jogador abre a troca; cada um põe itens e dinheiro, os dois apertam "ok" e então "troca".
 - Cada jogador personalizar a própria tela, por exemplo a aparência dos hexes não vistos.
+- Aba separada na ficha para veículos e montarias: um cavalo ou uma carruagem não fazem sentido dentro da mochila (nem no peso carregado).
+- Transformações que mudam a viagem: um druida em forma animal viajando mais rápido (ou voando e vendo mais longe). Depende de efeitos temporários, que o app ainda não tem; hoje o mestre usa a visão extra do grupo.
 
 ## Deixado para depois nos planos já feitos
 

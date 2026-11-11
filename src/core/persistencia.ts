@@ -176,6 +176,18 @@ function lerEntradaDaViagem(dado: unknown, posicao: number): EntradaDaViagem {
   };
 }
 
+/** Gravada a partir da visão individual; grupos de antes não a têm. */
+function lerVisaoExtra(dado: unknown): Record<string, number> {
+  if (dado === undefined) {
+    return {};
+  }
+  exigir(
+    ehObjeto(dado) && Object.values(dado).every((n) => Number.isInteger(n) && (n as number) > 0),
+    'A visão extra do grupo é inválida.',
+  );
+  return dado as Record<string, number>;
+}
+
 function lerGrupo(dado: unknown): EstadoGrupo {
   exigir(ehObjeto(dado), 'O arquivo não tem o grupo.');
   const ids = (lista: unknown, oQue: string) => {
@@ -195,6 +207,7 @@ function lerGrupo(dado: unknown): EstadoGrupo {
     relogio: minutos(dado.relogio, 'O relógio do grupo'),
     viajadoHoje: minutos(dado.viajadoHoje, 'O tempo viajado hoje'),
     historico: dado.historico.map(lerEntradaDaViagem),
+    visaoExtra: lerVisaoExtra(dado.visaoExtra),
   };
 }
 

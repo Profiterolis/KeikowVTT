@@ -13,8 +13,10 @@ export interface TagDeTerreno {
   readonly nome: string;
   /** Quanto o tempo de sair de um hex com esta tag é multiplicado. As tags de um hex se multiplicam entre si. */
   readonly multiplicador: number;
-  /** Ninguém entra num hex com esta tag (por enquanto; barcos virão com os veículos). */
+  /** Ninguém entra num hex com esta tag, a não ser de barco, se ela for navegável. */
   readonly intransponivel: boolean;
+  /** Água: barcos entram e andam nela, e os passos que saem dela usam a velocidade do barco. */
+  readonly navegavel: boolean;
   /** Pedaços do nome do arquivo do tile que dão esta tag, como "Mountain". Maiúsculas não importam. */
   readonly palavras: readonly string[];
 }
@@ -64,25 +66,26 @@ export const REGRAS_DE_VIAGEM_PADRAO: RegrasDeViagem = {
     { id: 'rapido', nome: 'Rápido', kmPorHora: 6, nota: '−5 na Percepção passiva.' },
   ],
   tags: [
-    { id: 'campo', nome: 'Campo', multiplicador: 1, intransponivel: false, palavras: ['Plains', 'Scrublands'] },
-    { id: 'floresta', nome: 'Floresta', multiplicador: 2, intransponivel: false, palavras: ['Forest', 'Woodlands', 'Jungle'] },
-    { id: 'colina', nome: 'Colina', multiplicador: 1.5, intransponivel: false, palavras: ['Hills', 'Highlands', 'Mesa'] },
-    { id: 'montanha', nome: 'Montanha', multiplicador: 2, intransponivel: false, palavras: ['Mountain', 'Volcano'] },
-    { id: 'neve', nome: 'Neve', multiplicador: 1.5, intransponivel: false, palavras: ['Snow'] },
-    { id: 'pantano', nome: 'Pântano', multiplicador: 2, intransponivel: false, palavras: ['Marsh', 'Bog', 'Wetlands'] },
-    { id: 'deserto', nome: 'Deserto', multiplicador: 1, intransponivel: false, palavras: ['Desert'] },
-    { id: 'dunas', nome: 'Dunas', multiplicador: 1.5, intransponivel: false, palavras: ['Dunes'] },
-    { id: 'lava', nome: 'Lava', multiplicador: 2, intransponivel: false, palavras: ['Lava', 'Volcano'] },
+    { id: 'campo', nome: 'Campo', multiplicador: 1, intransponivel: false, navegavel: false, palavras: ['Plains', 'Scrublands'] },
+    { id: 'floresta', nome: 'Floresta', multiplicador: 2, intransponivel: false, navegavel: false, palavras: ['Forest', 'Woodlands', 'Jungle'] },
+    { id: 'colina', nome: 'Colina', multiplicador: 1.5, intransponivel: false, navegavel: false, palavras: ['Hills', 'Highlands', 'Mesa'] },
+    { id: 'montanha', nome: 'Montanha', multiplicador: 2, intransponivel: false, navegavel: false, palavras: ['Mountain', 'Volcano'] },
+    { id: 'neve', nome: 'Neve', multiplicador: 1.5, intransponivel: false, navegavel: false, palavras: ['Snow'] },
+    { id: 'pantano', nome: 'Pântano', multiplicador: 2, intransponivel: false, navegavel: false, palavras: ['Marsh', 'Bog', 'Wetlands'] },
+    { id: 'deserto', nome: 'Deserto', multiplicador: 1, intransponivel: false, navegavel: false, palavras: ['Desert'] },
+    { id: 'dunas', nome: 'Dunas', multiplicador: 1.5, intransponivel: false, navegavel: false, palavras: ['Dunes'] },
+    { id: 'lava', nome: 'Lava', multiplicador: 2, intransponivel: false, navegavel: false, palavras: ['Lava', 'Volcano'] },
     // Estradas saem das cidades: deixar um povoado é mais rápido.
     {
       id: 'povoado',
       nome: 'Povoado',
       multiplicador: 0.5,
       intransponivel: false,
+      navegavel: false,
       palavras: ['Village', 'Castle', 'Farm', 'Forester', 'Mine'],
     },
-    { id: 'agua', nome: 'Água', multiplicador: 1, intransponivel: true, palavras: ['Ocean'] },
-    { id: 'vazio', nome: 'Vazio', multiplicador: 1, intransponivel: true, palavras: ['Void'] },
+    { id: 'agua', nome: 'Água', multiplicador: 1, intransponivel: true, navegavel: true, palavras: ['Ocean'] },
+    { id: 'vazio', nome: 'Vazio', multiplicador: 1, intransponivel: true, navegavel: false, palavras: ['Void'] },
   ],
   tagsPorTile: {
     // "Cacti Forest" é um deserto com cactos, não uma floresta.
@@ -112,9 +115,18 @@ export function ritmoDe(viagem: RegrasDeViagem, id: string): RitmoDeViagem {
 export interface ParteDoTempo {
   /** O que pesou no tempo, como "Floresta" ou "9 km a 4,5 km/h". */
   readonly texto: string;
-  /** Horas (na primeira parte) ou o multiplicador (nas tags). */
+  /** Horas (na base), o multiplicador do tempo (nas tags) ou da velocidade (montarias, veículos). */
   readonly valor: number;
-  readonly tipo: 'base' | 'multiplicador';
+  readonly tipo: 'base' | 'multiplicador' | 'velocidade';
+}
+
+/**
+ * Um membro do grupo, como a viagem o enxerga: o nome e os valores de viagem da ficha
+ * (`fator_viagem`, `veiculo_terra_lugares`, `guia_floresta`…), já com os efeitos.
+ */
+export interface MembroNaViagem {
+  readonly nome: string;
+  readonly valor: (nome: string) => number;
 }
 
 export type ResultadoDoPasso =
@@ -127,10 +139,65 @@ export type ResultadoDoPasso =
     }
   | { readonly ok: false; readonly motivo: string };
 
+/** Números com vírgula decimal, como no resto da interface. */
+const numero = (n: number) => String(Math.round(n * 100) / 100).replace('.', ',');
+
+/** O melhor veículo (terrestre ou barco) em que cabe o grupo inteiro, se algum membro tiver um. */
+function melhorVeiculo(
+  membros: readonly MembroNaViagem[],
+  tipo: 'terra' | 'agua',
+): { readonly fator: number; readonly dono: string } | null {
+  let melhor: { fator: number; dono: string } | null = null;
+  for (const membro of membros) {
+    if (membro.valor(`veiculo_${tipo}_lugares`) >= membros.length) {
+      const fator = membro.valor(`veiculo_${tipo}_fator`);
+      if (fator > 0 && (melhor === null || fator > melhor.fator)) {
+        melhor = { fator, dono: membro.nome };
+      }
+    }
+  }
+  return melhor;
+}
+
+/** Quem guia o grupo neste tipo de terreno, se alguém guiar: basta um. */
+function guiaDe(membros: readonly MembroNaViagem[], tag: TagDeTerreno): string | null {
+  return membros.find((m) => m.valor(`guia_${tag.id}`) >= 1)?.nome ?? null;
+}
+
+/**
+ * A velocidade do grupo em terra: vale o mais lento (um cavalo só ajuda se todos tiverem um),
+ * a não ser que caibam todos num veículo mais rápido.
+ */
+function velocidadeEmTerra(membros: readonly MembroNaViagem[]): ParteDoTempo | null {
+  if (membros.length === 0) {
+    return null;
+  }
+  let maisLento = membros[0];
+  for (const membro of membros) {
+    if (membro.valor('fator_viagem') < maisLento.valor('fator_viagem')) {
+      maisLento = membro;
+    }
+  }
+  const individual = maisLento.valor('fator_viagem');
+  const veiculo = melhorVeiculo(membros, 'terra');
+  if (veiculo && veiculo.fator > individual) {
+    return { texto: `Veículo de ${veiculo.dono}, onde cabem todos`, valor: veiculo.fator, tipo: 'velocidade' };
+  }
+  if (individual === 1 || individual <= 0) {
+    return null;
+  }
+  const texto =
+    membros.length === 1 ? `Velocidade de ${maisLento.nome}` : `Velocidade do mais lento (${maisLento.nome})`;
+  return { texto, valor: individual, tipo: 'velocidade' };
+}
+
 /**
  * Quanto tempo o grupo leva para ir de um hex ao vizinho. Conta o terreno de onde o
  * grupo sai: deixar uma cidade é rápido; atravessar uma floresta densa até ela, não.
  * O destino só importa para saber se dá para entrar.
+ *
+ * Com os membros, entram as montarias e veículos (velocidade), os barcos (água) e os guias
+ * (tiram a penalidade de um terreno). Sem membros, vale só o ritmo e o terreno.
  */
 export function tempoDoPasso(
   viagem: RegrasDeViagem,
@@ -138,6 +205,7 @@ export function tempoDoPasso(
   de: CoordHex,
   para: CoordHex,
   ritmoId: string,
+  membros: readonly MembroNaViagem[] = [],
 ): ResultadoDoPasso {
   if (!vizinhosHex(de).some((v) => v.q === para.q && v.r === para.r)) {
     return { ok: false, motivo: 'O grupo anda um hex por vez, só para um vizinho.' };
@@ -146,26 +214,52 @@ export function tempoDoPasso(
   if (!destino) {
     return { ok: false, motivo: 'Não há terreno neste hex.' };
   }
-  const bloqueio = tagsDoTile(viagem, destino.terreno).find((t) => t.intransponivel);
+  const barco = melhorVeiculo(membros, 'agua');
+  const bloqueio = tagsDoTile(viagem, destino.terreno).find((t) => t.intransponivel && !(t.navegavel && barco));
   if (bloqueio) {
-    return { ok: false, motivo: `Não dá para entrar: ${bloqueio.nome.toLowerCase()}.` };
+    const semBarco = bloqueio.navegavel ? ' sem um barco onde caibam todos' : '';
+    return { ok: false, motivo: `Não dá para entrar: ${bloqueio.nome.toLowerCase()}${semBarco}.` };
   }
   const origem = hexEm(mapa, de);
   // Se o mestre pôs o grupo num lugar sem terreno, a saída conta como terreno aberto.
   const tagsDaOrigem = origem ? tagsDoTile(viagem, origem.terreno) : [];
   const ritmo = ritmoDe(viagem, ritmoId);
   const base = viagem.kmPorHex / ritmo.kmPorHora;
-  return {
-    ok: true,
-    horas: base * multiplicadorDasTags(tagsDaOrigem),
-    tagsDaOrigem,
-    partes: [
-      { texto: `Ritmo ${ritmo.nome.toLowerCase()}: ${viagem.kmPorHex} km a ${ritmo.kmPorHora} km/h`, valor: base, tipo: 'base' },
-      ...tagsDaOrigem
-        .filter((t) => t.multiplicador !== 1)
-        .map((t) => ({ texto: t.nome, valor: t.multiplicador, tipo: 'multiplicador' as const })),
-    ],
-  };
+  const naAgua = tagsDaOrigem.some((t) => t.navegavel);
+
+  const partes: ParteDoTempo[] = [
+    {
+      texto: `Ritmo ${ritmo.nome.toLowerCase()}: ${numero(viagem.kmPorHex)} km a ${numero(ritmo.kmPorHora)} km/h`,
+      valor: base,
+      tipo: 'base',
+    },
+  ];
+  // Na água, quem leva o grupo é o barco; em terra, as montarias e os veículos.
+  const velocidade: ParteDoTempo | null = naAgua
+    ? barco && barco.fator !== 1
+      ? { texto: `Barco de ${barco.dono}`, valor: barco.fator, tipo: 'velocidade' }
+      : null
+    : velocidadeEmTerra(membros);
+  if (velocidade) {
+    partes.push(velocidade);
+  }
+  for (const tag of tagsDaOrigem) {
+    if (tag.multiplicador === 1) {
+      continue;
+    }
+    // O guia tira a penalidade, mas não o bônus das estradas.
+    const guia = tag.multiplicador > 1 ? guiaDe(membros, tag) : null;
+    partes.push(
+      guia
+        ? { texto: `${tag.nome}, sem penalidade (guia: ${guia})`, valor: 1, tipo: 'multiplicador' }
+        : { texto: tag.nome, valor: tag.multiplicador, tipo: 'multiplicador' },
+    );
+  }
+  let horas = 0;
+  for (const parte of partes) {
+    horas = parte.tipo === 'base' ? parte.valor : parte.tipo === 'velocidade' ? horas / parte.valor : horas * parte.valor;
+  }
+  return { ok: true, horas, tagsDaOrigem, partes };
 }
 
 // ---------- Conferência ----------
@@ -273,11 +367,15 @@ export function lerViagem(valor: unknown, padrao: RegrasDeViagem): RegrasDeViage
       const local = `A tag de terreno nº ${i + 1}`;
       exigir(ehObjeto(t), `${local} não é válida.`);
       exigir(typeof t.intransponivel === 'boolean', `${local}: "intransponivel" precisa ser sim ou não.`);
+      // Gravadas antes dos barcos: só a água era navegável.
+      const navegavel = t.navegavel === undefined ? t.id === 'agua' : t.navegavel;
+      exigir(typeof navegavel === 'boolean', `${local}: "navegavel" precisa ser sim ou não.`);
       return {
         id: texto(t, 'id', local),
         nome: texto(t, 'nome', local),
         multiplicador: numero(t, 'multiplicador', local),
         intransponivel: t.intransponivel,
+        navegavel,
         palavras: textos(t.palavras, `${local}: as palavras`),
       };
     }),

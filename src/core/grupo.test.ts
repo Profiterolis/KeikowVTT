@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  alcanceDaVisao,
   aplicarAcaoGrupo,
   criarLojaGrupo,
   fimDoAcampamento,
@@ -14,7 +15,7 @@ import {
 import type { CoordHex } from './hex';
 import { aplicarAcao, criarMapaVazio, type EstadoMapa } from './mapa';
 import type { EventoExecutado } from './registro';
-import { REGRAS_DE_VIAGEM_PADRAO as VIAGEM } from './viagem';
+import { REGRAS_DE_VIAGEM_PADRAO as VIAGEM, type MembroNaViagem } from './viagem';
 
 const A = { q: 0, r: 0 };
 const B = { q: 1, r: 0 };
@@ -36,11 +37,21 @@ const MAPA = mapaCom([A, 'hexPlains00'], [B, 'hexForestBroadleaf00'], [C, 'hexPl
 /** Fichas: a da Ana (jogadora), a do Bia (jogadora) e um NPC do mestre. */
 const DONOS: Record<string, string> = { ana: 'j-ana', bia: 'j-bia', guia: 'mestre' };
 
+/** Valores de viagem de cada ficha que não sejam os padrões. */
+let valores: Record<string, Record<string, number>> = {};
+const PADROES: Record<string, number> = { fator_viagem: 1, visao_hexes: 1, veiculo_terra_fator: 1, veiculo_agua_fator: 1 };
+
 const contexto: ContextoDoGrupo = {
   obterMapa: () => MAPA,
   obterViagem: () => VIAGEM,
   obterDonoDaFicha: (id) => DONOS[id] ?? null,
+  obterMembroNaViagem: (id): MembroNaViagem | null =>
+    id in DONOS ? { nome: id, valor: (nome) => valores[id]?.[nome] ?? PADROES[nome] ?? 0 } : null,
 };
+
+beforeEach(() => {
+  valores = {};
+});
 
 const viajando: EstadoGrupo = { ...GRUPO_INICIAL, posicao: A, membros: ['ana', 'bia', 'guia'], liderId: 'ana' };
 
@@ -276,5 +287,63 @@ describe('loja e permissões', () => {
     cancelar();
     loja.despachar({ tipo: 'PosicionarGrupo', coord: B });
     expect(ouvinte).not.toHaveBeenCalled();
+  });
+});
+
+describe('montarias, veículos e guias no passo', () => {
+  it('um cavalo só ajuda se todos tiverem montaria', () => {
+    valores = { ana: { fator_viagem: 1.5 } };
+    expect(aplicar(viajando, { tipo: 'MoverGrupo', para: B }).viajadoHoje).toBe(120);
+    valores = { ana: { fator_viagem: 1.5 }, bia: { fator_viagem: 1.5 }, guia: { fator_viagem: 1.25 } };
+    expect(aplicar(viajando, { tipo: 'MoverGrupo', para: B }).viajadoHoje).toBe(96);
+  });
+
+  it('uma carruagem onde cabem todos leva o grupo inteiro', () => {
+    valores = { bia: { veiculo_terra_lugares: 3, veiculo_terra_fator: 1.25 } };
+    expect(aplicar(viajando, { tipo: 'MoverGrupo', para: B }).viajadoHoje).toBe(96);
+    valores = { bia: { veiculo_terra_lugares: 2, veiculo_terra_fator: 1.25 } };
+    expect(aplicar(viajando, { tipo: 'MoverGrupo', para: B }).viajadoHoje).toBe(120);
+  });
+
+  it('um guia de floresta tira a penalidade ao sair da floresta', () => {
+    const naFloresta = { ...viajando, posicao: B };
+    expect(aplicar(naFloresta, { tipo: 'MoverGrupo', para: C }).viajadoHoje).toBe(240);
+    valores = { guia: { guia_floresta: 1 } };
+    expect(aplicar(naFloresta, { tipo: 'MoverGrupo', para: C }).viajadoHoje).toBe(120);
+  });
+});
+
+describe('visão de cada jogador', () => {
+  it('sem efeitos, todos veem os vizinhos', () => {
+    expect(alcanceDaVisao(viajando, 'j-ana', contexto)).toBe(1);
+    expect(alcanceDaVisao(viajando, 'j-carla', contexto)).toBe(1);
+  });
+
+  it('só quem controla a ficha que enxerga longe vê mais', () => {
+    valores = { ana: { visao_hexes: 2 } };
+    expect(alcanceDaVisao(viajando, 'j-ana', contexto)).toBe(2);
+    expect(alcanceDaVisao(viajando, 'j-bia', contexto)).toBe(1);
+  });
+
+  it('a visão extra do mestre soma à da ficha e some ao tirar o membro', () => {
+    const voando = aplicar(viajando, { tipo: 'DefinirVisaoExtra', fichaId: 'bia', extra: 2 });
+    expect(alcanceDaVisao(voando, 'j-bia', contexto)).toBe(3);
+    expect(alcanceDaVisao(voando, 'j-ana', contexto)).toBe(1);
+    expect(aplicar(voando, { tipo: 'DefinirVisaoExtra', fichaId: 'bia', extra: 0 }).visaoExtra).toEqual({});
+    expect(aplicar(voando, { tipo: 'RemoverMembro', fichaId: 'bia' }).visaoExtra).toEqual({});
+  });
+
+  it('recusa visão extra negativa ou para quem não é do grupo', () => {
+    expect(motivo(viajando, { tipo: 'DefinirVisaoExtra', fichaId: 'bia', extra: -1 })).toContain('zero ou mais');
+    expect(motivo({ ...viajando, membros: ['ana'] }, { tipo: 'DefinirVisaoExtra', fichaId: 'bia', extra: 1 })).toContain(
+      'membro',
+    );
+  });
+
+  it('só o mestre dá visão extra', () => {
+    const recusas: string[] = [];
+    const loja = criarLojaGrupo(viajando, { obterAutorId: () => 'j-ana', aoRecusar: (m) => recusas.push(m) }, contexto);
+    expect(loja.despachar({ tipo: 'DefinirVisaoExtra', fichaId: 'ana', extra: 3 })).toBe(false);
+    expect(recusas).toEqual(['Só o mestre faz isto no grupo.']);
   });
 });

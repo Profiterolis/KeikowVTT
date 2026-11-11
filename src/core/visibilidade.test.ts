@@ -160,6 +160,36 @@ describe('visaoDoJogador', () => {
   });
 });
 
+describe('alcance da visão', () => {
+  const DOIS = { q: 2, r: 0 };
+  const TRES = { q: 3, r: 0 };
+  const longe = () =>
+    aplicarTodas([
+      { tipo: 'ColocarTile', coord: A, terreno: 't' },
+      { tipo: 'ColocarTile', coord: VIZINHO, terreno: 't' },
+      { tipo: 'ColocarTile', coord: DOIS, terreno: 't' },
+      { tipo: 'ColocarTile', coord: TRES, terreno: 't' },
+      ...comInformacao(DOIS, 'Torre'),
+    ]);
+
+  it('com alcance 1, só os vizinhos; com alcance 2, um anel a mais', () => {
+    expect(Object.keys(visaoDoJogador(longe(), [A]).hexes).sort()).toEqual(['0,0', '1,0']);
+    expect(Object.keys(visaoDoJogador(longe(), [A], '', 2).hexes).sort()).toEqual(['0,0', '1,0', '2,0']);
+  });
+
+  it('o que se vê de longe é só terreno e decorações, sem nome nem notas', () => {
+    const torre = hexEm(visaoDoJogador(longe(), [A], 'j1', 2), DOIS);
+    expect(torre?.nome).toBe('');
+    expect(torre?.notas).toEqual([]);
+  });
+
+  it('nivelDeVisao segue o alcance', () => {
+    const hex = hexEm(longe(), TRES)!;
+    expect(nivelDeVisao(hex, [A], 2)).toBe('oculto');
+    expect(nivelDeVisao(hex, [A], 3)).toBe('avistado');
+  });
+});
+
 describe('nivelDeVisao', () => {
   const nivelEm = (estado: EstadoMapa, coord: typeof A, posicoes: (typeof A)[]) =>
     nivelDeVisao(hexEm(estado, coord)!, posicoes);

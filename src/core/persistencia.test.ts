@@ -94,6 +94,7 @@ describe('o grupo no arquivo (versão 4)', () => {
     ritmo: 'rapido',
     relogio: 2000,
     viajadoHoje: 90,
+    visaoExtra: { f2: 2 },
     historico: [
       {
         id: 1,
@@ -123,6 +124,12 @@ describe('o grupo no arquivo (versão 4)', () => {
     });
   });
 
+  it('um grupo gravado antes da visão extra ganha uma vazia', () => {
+    const { visaoExtra: _v, ...antigo } = grupoCompleto;
+    const resultado = desserializarMapa(arquivo({ versao: 4, aparenciaOculta: APARENCIA_PADRAO, grupo: antigo, hexes: [] }));
+    expect(resultado.ok && resultado.grupo.visaoExtra).toEqual({});
+  });
+
   it('um mapa da versão 3 mantém a posição do grupo e ganha o resto padrão', () => {
     const resultado = desserializarMapa(
       arquivo({ versao: 3, aparenciaOculta: APARENCIA_PADRAO, posicaoGrupo: { q: 2, r: 2 }, hexes: [hexValido] }),
@@ -139,6 +146,7 @@ describe('o grupo no arquivo (versão 4)', () => {
     ['com relógio negativo', { ...grupoCompleto, relogio: -5 }, 'relógio'],
     ['com líder numérico', { ...grupoCompleto, liderId: 3 }, 'líder'],
     ['sem diário', { ...grupoCompleto, historico: undefined }, 'diário'],
+    ['com visão extra negativa', { ...grupoCompleto, visaoExtra: { f1: -1 } }, 'visão extra'],
     [
       'com acontecimento desconhecido',
       { ...grupoCompleto, historico: [{ ...grupoCompleto.historico[0], acontecimento: { tipo: 'voou' } }] },

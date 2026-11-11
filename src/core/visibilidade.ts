@@ -1,4 +1,4 @@
-import { chaveHex, vizinhosHex, type ChaveHex, type CoordHex } from './hex';
+import { chaveHex, distanciaHex, type ChaveHex, type CoordHex } from './hex';
 import { INFORMACAO_VAZIA, type EstadoMapa, type Hex } from './mapa';
 
 /** Quem pode ver uma informação: todos, só o mestre, ou o mestre e os jogadores escolhidos. */
@@ -62,42 +62,40 @@ function chavesDePosicao(posicoes: readonly CoordHex[]): ReadonlySet<ChaveHex> {
   return new Set(posicoes.map(chaveHex));
 }
 
-function chavesVizinhas(posicoes: readonly CoordHex[]): ReadonlySet<ChaveHex> {
-  return new Set(posicoes.flatMap(vizinhosHex).map(chaveHex));
+/** Hexes à vista além da posição: os vizinhos, ou mais longe com um alcance maior. */
+function noAlcance(hex: Hex, posicoes: readonly CoordHex[], alcance: number): boolean {
+  return posicoes.some((p) => distanciaHex(p, hex.coord) <= alcance);
 }
 
-function calcularNivel(
-  hex: Hex,
-  posicoes: ReadonlySet<ChaveHex>,
-  vizinhas: ReadonlySet<ChaveHex>,
-): NivelDeVisao {
+function calcularNivel(hex: Hex, posicoes: ReadonlySet<ChaveHex>, listaDePosicoes: readonly CoordHex[], alcance: number): NivelDeVisao {
   const chave = chaveHex(hex.coord);
   if (posicoes.has(chave)) {
     return 'completo';
   }
-  return vizinhas.has(chave) || hex.revelado ? 'avistado' : 'oculto';
+  return hex.revelado || noAlcance(hex, listaDePosicoes, alcance) ? 'avistado' : 'oculto';
 }
 
-export function nivelDeVisao(hex: Hex, posicoes: readonly CoordHex[]): NivelDeVisao {
-  return calcularNivel(hex, chavesDePosicao(posicoes), chavesVizinhas(posicoes));
+/** `alcance` 1 são os 6 vizinhos; quem voa pode enxergar mais longe. */
+export function nivelDeVisao(hex: Hex, posicoes: readonly CoordHex[], alcance = 1): NivelDeVisao {
+  return calcularNivel(hex, chavesDePosicao(posicoes), posicoes, alcance);
 }
 
 /**
  * O mapa como um jogador pode vê-lo, a partir de onde o grupo está: o hex da posição,
- * os 6 vizinhos e os hexes revelados pelo mestre. Os demais hexes simplesmente não existem aqui.
- * Sem `participanteId`, ficam só as notas de todos.
+ * os hexes ao alcance da visão dele (os 6 vizinhos, com alcance 1) e os revelados pelo mestre.
+ * Os demais hexes simplesmente não existem aqui. Sem `participanteId`, ficam só as notas de todos.
  */
 export function visaoDoJogador(
   estado: EstadoMapa,
   posicoes: readonly CoordHex[],
   participanteId = '',
+  alcance = 1,
 ): EstadoMapa {
   const chavesPosicao = chavesDePosicao(posicoes);
-  const vizinhas = chavesVizinhas(posicoes);
   const hexes: Record<ChaveHex, Hex> = {};
 
   for (const hex of Object.values(estado.hexes)) {
-    const nivel = calcularNivel(hex, chavesPosicao, vizinhas);
+    const nivel = calcularNivel(hex, chavesPosicao, posicoes, alcance);
     if (nivel !== 'oculto') {
       hexes[chaveHex(hex.coord)] = nivel === 'completo' ? hexCompleto(hex, participanteId) : hexAvistado(hex);
     }

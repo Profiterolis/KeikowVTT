@@ -43,7 +43,7 @@ import {
   type TipoFicha,
 } from '../core/fichas';
 import { numeroNaTela } from './numeros';
-import { idSalvaguarda } from '../core/regras';
+import { idSalvaguarda, PREFIXO_GUIA, valoresDeViagem } from '../core/regras';
 import { useRegras } from './contextoRegras';
 import { CampoNumero, CampoTexto } from './camposFormulario';
 import { comSinal, ExplicacaoValor, type Explicando } from './ExplicacaoValor';
@@ -588,6 +588,7 @@ function EditorFicha({ ficha, compendio, participantes, lojaFichas, lojaRolagens
       <BlocoCombate ficha={ficha} calculo={calculo} editar={editar} explicar={explicar} mesa={mesa} />
       <BlocoEspacos ficha={ficha} calculo={calculo} editar={editar} podeAgir={podeAgir} />
       <BlocoTestes ficha={ficha} calculo={calculo} editar={editar} explicar={explicar} mesa={mesa} />
+      {ficha.tipo !== 'monstro' && <BlocoViagem calculo={calculo} explicar={explicar} />}
       {ficha.tipo !== 'monstro' && (
         <fieldset className="grupo-transparente" disabled={!tudo} title={motivo ?? undefined}>
           <BlocoDadosDeVida ficha={ficha} editar={editar} />
@@ -925,6 +926,42 @@ function BlocoCombate({ ficha, calculo, editar, explicar, mesa }: PropsBloco) {
             aoMudar={(v) => v !== null && editar({ ...ficha, pvTemporarios: v }, 'pvTemporarios')}
           />
         </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * O que a ficha leva para a viagem no mapa: velocidade, visão, veículos e guias.
+ * Veículos e guias só aparecem quando a ficha tem algum, para não encher a ficha de zeros.
+ */
+function BlocoViagem({ calculo, explicar }: Pick<PropsBloco, 'calculo' | 'explicar'>) {
+  const REGRAS = useRegras();
+  const valorDe = (id: string) => {
+    const c = calculo.valor(id);
+    return c.ok ? c.valor : null;
+  };
+  const visiveis = valoresDeViagem(REGRAS).filter(({ id, padrao }) => {
+    if (id === 'fator_viagem' || id === 'visao_hexes') {
+      return true;
+    }
+    if (id.startsWith(PREFIXO_GUIA)) {
+      return (valorDe(id) ?? 0) >= 1;
+    }
+    // Um veículo aparece inteiro (lugares e velocidade) quando a ficha tem lugares nele.
+    const lugares = id.replace(/_fator$/, '_lugares');
+    return (valorDe(lugares) ?? 0) > 0 || valorDe(id) !== padrao;
+  });
+  return (
+    <section className="ficha-secao">
+      <h3>Viagem</h3>
+      <div className="ficha-combate">
+        {visiveis.map(({ id }) => (
+          <div key={id} className="ficha-caixa">
+            <span>{calculo.rotulo(id)}</span>
+            <Valor calculado={calculo.valor(id)} rotulo={calculo.rotulo(id)} explicar={explicar} />
+          </div>
+        ))}
       </div>
     </section>
   );

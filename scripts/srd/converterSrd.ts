@@ -308,6 +308,7 @@ export function converterEquipamento(registro: Registro): EntradaDe<'item'> {
   const categoria = categoriaDoEquipamento(registro);
   return {
     ...base('item', id('equipamento', registro.index), registro.name, descricaoDoEquipamento(registro), nomes(registro.equipment_categories)),
+    efeitos: efeitosProntos(registro.index),
     dados: {
       categoria,
       peso: librasParaQuilos(registro.weight ?? 0),
@@ -741,6 +742,13 @@ const protecaoMagica = (quando: Efeito['quando']): EfeitoPronto[] => [
   ...SALVAGUARDAS_TODAS.map((s) => somar(s, '1', quando)),
 ];
 const cintoDeGigante = (forca: number): EfeitoPronto[] => [noMinimo('for', String(forca), 'sintonizado')];
+/** Uma montaria: quem a tem viaja mais rápido (o grupo só acelera se todos tiverem uma). */
+const montaria = (fator: string): EfeitoPronto[] => [noMinimo('fator_viagem', fator)];
+/** Um veículo leva quantos couberem; o "no mínimo" fica com o melhor, se houver vários. */
+const veiculo = (tipo: 'terra' | 'agua', lugares: number, fator: string): EfeitoPronto[] => [
+  noMinimo(`veiculo_${tipo}_lugares`, String(lugares)),
+  noMinimo(`veiculo_${tipo}_fator`, fator),
+];
 
 /**
  * Efeitos que o SRD descreve só no texto, escritos aqui como dados, pelo índice da base.
@@ -767,6 +775,29 @@ const EFEITOS_PRONTOS: Readonly<Record<string, readonly EfeitoPronto[]>> = {
     ...SALVAGUARDAS_TODAS.map((s) => somar(s, '1', 'sintonizado')),
     ...REGRAS_PADRAO.pericias.map((p) => somar(p.id, '1', 'sintonizado')),
   ],
+  // Montarias, veículos e barcos (Fase 5). Barcos: velocidade do 5e em mph ÷ 3 (4,5 km/h = ×1);
+  // lugares: tripulação mais passageiros. Os veículos terrestres não dizem lugares no SRD: são estimativas.
+  'horse-riding': montaria('1.5'),
+  warhorse: montaria('1.5'),
+  'horse-draft': montaria('1.5'),
+  camel: montaria('1.5'),
+  pony: montaria('1.25'),
+  mule: montaria('1.25'),
+  elephant: montaria('1.25'),
+  mastiff: montaria('1.25'),
+  carriage: veiculo('terra', 4, '1.25'),
+  wagon: veiculo('terra', 6, '1.25'),
+  cart: veiculo('terra', 2, '1.25'),
+  chariot: veiculo('terra', 2, '1.25'),
+  sled: veiculo('terra', 4, '1.25'),
+  rowboat: veiculo('agua', 4, '1.5 / 3'),
+  keelboat: veiculo('agua', 7, '1 / 3'),
+  'sailing-ship': veiculo('agua', 40, '2 / 3'),
+  warship: veiculo('agua', 120, '2.5 / 3'),
+  longship: veiculo('agua', 190, '3 / 3'),
+  galley: veiculo('agua', 80, '4 / 3'),
+  // Uma luneta à mão deixa ver um hex mais longe.
+  spyglass: [somar('visao_hexes', '1', 'equipado')],
   // Habilidades de classe.
   'barbarian-unarmored-defense': [noMinimo('ca', 'se(usando_armadura, 0, 10 + mod(DES) + mod(CON) + escudo_bonus)')],
   'monk-unarmored-defense': [noMinimo('ca', 'se(usando_armadura ou usando_escudo, 0, 10 + mod(DES) + mod(SAB))')],

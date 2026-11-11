@@ -63,7 +63,8 @@ interface ControlesCena {
   /** Liga ou desliga o escurecimento dos hexes que os jogadores não veriam. */
   definirConferenciaDeVisao(ativa: boolean): void;
   /** Passa a desenhar o mapa exatamente como este jogador o veria; `null` volta ao modo mestre. */
-  definirModoJogador(participanteId: string | null): void;
+  /** `alcance` é até onde aquele jogador enxerga no mapa (1 são os vizinhos). */
+  definirModoJogador(participanteId: string | null, alcance?: number): void;
   cancelarAssinatura(): void;
 }
 
@@ -118,7 +119,7 @@ export function createMapScene(container: HTMLElement, opcoes: OpcoesCena): Cena
     centralizarNoMapa: () => controles?.centralizarNoMapa(),
     selecionarHex: (coord) => controles?.selecionarHex(coord),
     definirConferenciaDeVisao: (ativa) => controles?.definirConferenciaDeVisao(ativa),
-    definirModoJogador: (participanteId) => controles?.definirModoJogador(participanteId),
+    definirModoJogador: (participanteId, alcance) => controles?.definirModoJogador(participanteId, alcance),
     destruir() {
       disposed = true;
       controles?.cancelarAssinatura();
@@ -181,6 +182,7 @@ function montarCena(app: Application, catalogo: Catalogo, opcoes: OpcoesCena): C
   let conferindoVisao = false;
   /** O jogador cuja visão está sendo desenhada, ou `null` no modo mestre. */
   let jogadorId: string | null = null;
+  let alcanceDoJogador = 1;
 
   const atualizarCamadas = () => {
     const estadoDoMestre = opcoes.loja.obterEstado();
@@ -188,7 +190,7 @@ function montarCena(app: Application, catalogo: Catalogo, opcoes: OpcoesCena): C
     // No modo jogador, todas as camadas desenham só a visão filtrada: o que está oculto não chega aqui.
     const modoJogador = jogadorId !== null;
     const estado = modoJogador
-      ? visaoDoJogador(estadoDoMestre, posicao ? [posicao] : [], jogadorId ?? '')
+      ? visaoDoJogador(estadoDoMestre, posicao ? [posicao] : [], jogadorId ?? '', alcanceDoJogador)
       : estadoDoMestre;
     const conferir = conferindoVisao && !modoJogador;
 
@@ -345,8 +347,9 @@ function montarCena(app: Application, catalogo: Catalogo, opcoes: OpcoesCena): C
       conferindoVisao = ativa;
       atualizarCamadas();
     },
-    definirModoJogador: (participanteId) => {
+    definirModoJogador: (participanteId, alcance = 1) => {
       jogadorId = participanteId;
+      alcanceDoJogador = alcance;
       atualizarCamadas();
     },
     cancelarAssinatura: () => {

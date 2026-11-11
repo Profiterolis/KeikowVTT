@@ -51,6 +51,12 @@ export function criarControlador(
   let hexesAnotadosApagados = 0;
   // No modo jogador, nada que venha do mouse pode alterar o mapa.
   let somenteLeitura = false;
+  // Com o mapa travado, o mestre continua revelando, ocultando e posicionando o grupo,
+  // mas não pinta, não apaga e não arrasta decorações sem querer.
+  let travado = false;
+  // No modo jogador: até onde aquele jogador enxerga, para só abrir hexes ao alcance dele.
+  let alcanceDaVisao = 1;
+  const ehEdicaoDoMapa = (f: Ferramenta) => f.tipo === 'colocar' || f.tipo === 'apagar';
 
   const removerHex = (coord: CoordHex) => {
     const hex = hexEm(loja.obterEstado(), coord);
@@ -91,7 +97,7 @@ export function criarControlador(
   };
 
   const colocarAsset = (assetId: string, ponto: PontoMundo) => {
-    if (somenteLeitura) {
+    if (somenteLeitura || travado) {
       return;
     }
     const posicao = posicaoFinal(assetId, ponto);
@@ -177,8 +183,27 @@ export function criarControlador(
 
   return {
     definirFerramenta(nova: Ferramenta) {
-      ferramenta = nova;
+      ferramenta = travado && ehEdicaoDoMapa(nova) ? SEM_FERRAMENTA : nova;
       obterCena()?.limparPrevia();
+    },
+
+    definirAlcanceDaVisao(alcance: number) {
+      alcanceDaVisao = alcance;
+    },
+
+    /** Ao travar, solta as ferramentas que mudam o mapa e para de arrastar decorações. */
+    definirTravado(ativo: boolean) {
+      travado = ativo;
+      if (ativo) {
+        if (ehEdicaoDoMapa(ferramenta)) {
+          ferramenta = SEM_FERRAMENTA;
+        }
+        if (movimento) {
+          movimento = null;
+          obterCena()?.sincronizarDecoracoes();
+        }
+        obterCena()?.limparPrevia();
+      }
     },
 
     /** Ao ligar, solta a ferramenta atual e passa a ignorar edições. */
@@ -195,7 +220,7 @@ export function criarControlador(
     mostrarPrevia,
 
     aoMoverPonteiro(ponto: PontoMundo | null) {
-      if (ponto && ferramenta.tipo === 'colocar') {
+      if (ponto && ferramenta.tipo === 'colocar' && !travado) {
         mostrarPrevia(ferramenta.assetId, ponto);
       } else {
         obterCena()?.limparPrevia();
@@ -209,7 +234,9 @@ export function criarControlador(
       const coord = mundoParaHex(ponto);
       switch (ferramenta.tipo) {
         case 'nenhuma':
-          iniciarMovimento(ponto);
+          if (!travado) {
+            iniciarMovimento(ponto);
+          }
           break;
         case 'apagar':
           loja.iniciarTraco();
@@ -282,7 +309,7 @@ export function criarControlador(
         // O jogador só consegue abrir o que está ao alcance da visão dele.
         const hex = hexEm(loja.obterEstado(), coord);
         const { posicao } = lojaGrupo.obterEstado();
-        if (hex && nivelDeVisao(hex, posicao ? [posicao] : []) !== 'oculto') {
+        if (hex && nivelDeVisao(hex, posicao ? [posicao] : [], alcanceDaVisao) !== 'oculto') {
           aoSelecionarHex(coord);
         }
       } else if (ferramenta.tipo === 'nenhuma') {

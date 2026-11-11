@@ -211,6 +211,88 @@ describe('modo somente leitura', () => {
   });
 });
 
+describe('mapa travado', () => {
+  function travado() {
+    const montado = montar();
+    montado.colocarTerreno();
+    montado.controlador.colocarAsset('casa', { x: 5, y: 5 });
+    montado.cena.decoracaoEm.mockReturnValue({
+      decoracaoId: montado.decoracoes()[0].id,
+      assetId: 'casa',
+      coord: A,
+      posicao: { x: 5, y: 5 },
+    });
+    montado.controlador.definirTravado(true);
+    return montado;
+  }
+
+  it('arrastar uma decoração sem querer não a move', () => {
+    const { loja, cena, controlador } = travado();
+    const antes = loja.obterEstado();
+    controlador.aoIniciarTraco({ x: 5, y: 5 });
+    controlador.aoMoverDuranteTraco(centroB);
+    controlador.aoTerminarTraco();
+    expect(loja.obterEstado()).toBe(antes);
+    expect(cena.moverDecoracaoVisual).not.toHaveBeenCalled();
+  });
+
+  it.each<Ferramenta>([{ tipo: 'colocar', assetId: 'tile' }, { tipo: 'colocar', assetId: 'casa' }, { tipo: 'apagar' }])(
+    'não pinta, não coloca e não apaga: %j',
+    (ferramenta) => {
+      const { loja, controlador, usar } = travado();
+      usar(ferramenta);
+      const antes = loja.obterEstado();
+      controlador.aoIniciarTraco(centroB);
+      controlador.aoContinuarTraco(A);
+      controlador.aoTerminarTraco();
+      controlador.colocarAsset('tile', hexParaMundo({ q: 3, r: 0 }));
+      expect(loja.obterEstado()).toBe(antes);
+    },
+  );
+
+  it('travar no meio de um arraste devolve a decoração ao lugar', () => {
+    const montado = montar();
+    montado.colocarTerreno();
+    montado.controlador.colocarAsset('casa', { x: 5, y: 5 });
+    montado.cena.decoracaoEm.mockReturnValue({
+      decoracaoId: montado.decoracoes()[0].id,
+      assetId: 'casa',
+      coord: A,
+      posicao: { x: 5, y: 5 },
+    });
+    montado.controlador.aoIniciarTraco({ x: 5, y: 5 });
+    montado.controlador.aoMoverDuranteTraco(centroB);
+    montado.controlador.definirTravado(true);
+    montado.controlador.aoTerminarTraco();
+    expect(montado.decoracoes(A)).toHaveLength(1);
+    expect(montado.cena.sincronizarDecoracoes).toHaveBeenCalled();
+  });
+
+  it('continua revelando, posicionando o grupo e abrindo hexes', () => {
+    const { loja, lojaGrupo, controlador, usar, aoSelecionarHex } = travado();
+    usar({ tipo: 'revelar' });
+    controlador.aoIniciarTraco(centroB);
+    controlador.aoTerminarTraco();
+    expect(hexEm(loja.obterEstado(), B)?.revelado).toBe(true);
+    usar({ tipo: 'posicionar' });
+    controlador.aoIniciarTraco(centroB);
+    controlador.aoTerminarTraco();
+    expect(lojaGrupo.obterEstado().posicao).toEqual(B);
+    usar({ tipo: 'nenhuma' });
+    controlador.aoClicar(centroB);
+    expect(aoSelecionarHex).toHaveBeenCalledExactlyOnceWith(B);
+  });
+
+  it('ao destravar, volta a editar', () => {
+    const { controlador, decoracoes } = travado();
+    controlador.definirTravado(false);
+    controlador.aoIniciarTraco({ x: 5, y: 5 });
+    controlador.aoMoverDuranteTraco(centroB);
+    controlador.aoTerminarTraco();
+    expect(decoracoes(B)).toHaveLength(1);
+  });
+});
+
 describe('revelar e ocultar', () => {
   const revelado = (loja: ReturnType<typeof montar>['loja'], coord: typeof A) =>
     hexEm(loja.obterEstado(), coord)?.revelado;

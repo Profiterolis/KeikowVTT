@@ -8,6 +8,7 @@ import {
   REGRAS_DE_VIAGEM_PADRAO as VIAGEM,
   tagsDoTile,
   tempoDoPasso,
+  type MembroNaViagem,
   type RegrasDeViagem,
 } from './viagem';
 
@@ -96,6 +97,72 @@ describe('tempo de um passo', () => {
   });
 });
 
+describe('montarias, veículos, barcos e guias', () => {
+  const PADROES: Record<string, number> = { fator_viagem: 1, veiculo_terra_fator: 1, veiculo_agua_fator: 1 };
+  const membro = (nome: string, valores: Record<string, number> = {}): MembroNaViagem => ({
+    nome,
+    valor: (n) => valores[n] ?? PADROES[n] ?? 0,
+  });
+  const PLANICIES = mapaCom([A, 'hexPlains00'], [B, 'hexPlains00']);
+  const horas = (membros: MembroNaViagem[], mapa = PLANICIES) => {
+    const passo = tempoDoPasso(VIAGEM, mapa, A, B, 'normal', membros);
+    return passo.ok ? passo.horas : passo.motivo;
+  };
+
+  it('vale o mais lento: o cavalo de um só não acelera o grupo', () => {
+    expect(horas([membro('Ana', { fator_viagem: 1.5 }), membro('Bia')])).toBe(2);
+    expect(horas([membro('Ana', { fator_viagem: 2 }), membro('Bia', { fator_viagem: 2 })])).toBe(1);
+  });
+
+  it('a explicação diz quem segura o grupo', () => {
+    const passo = tempoDoPasso(VIAGEM, PLANICIES, A, B, 'normal', [
+      membro('Ana', { fator_viagem: 2 }),
+      membro('Bia', { fator_viagem: 1.25 }),
+    ]);
+    expect(passo.ok && passo.partes.map((p) => p.texto)).toEqual([
+      'Ritmo normal: 9 km a 4,5 km/h',
+      'Velocidade do mais lento (Bia)',
+    ]);
+  });
+
+  it('um veículo onde cabem todos leva o grupo; com lugares de menos, não', () => {
+    const carruagem = { veiculo_terra_lugares: 2, veiculo_terra_fator: 2 };
+    expect(horas([membro('Ana', carruagem), membro('Bia')])).toBe(1);
+    expect(horas([membro('Ana', carruagem), membro('Bia'), membro('Caio')])).toBe(2);
+  });
+
+  it('o veículo não atrasa quem já anda mais rápido', () => {
+    const lento = { veiculo_terra_lugares: 4, veiculo_terra_fator: 1.25, fator_viagem: 2 };
+    expect(horas([membro('Ana', lento), membro('Bia', { fator_viagem: 2 })])).toBe(1);
+  });
+
+  it('um barco onde cabem todos deixa entrar na água e leva o grupo nela', () => {
+    const costa = mapaCom([A, 'hexPlains00'], [B, 'hexOcean00']);
+    const barco = { veiculo_agua_lugares: 4, veiculo_agua_fator: 0.5 };
+    expect(horas([membro('Ana'), membro('Bia')], costa)).toContain('sem um barco');
+    expect(horas([membro('Ana', barco), membro('Bia')], costa)).toBe(2);
+    const mar = mapaCom([A, 'hexOcean00'], [B, 'hexOcean00']);
+    expect(horas([membro('Ana', barco), membro('Bia')], mar)).toBe(4);
+    // Montarias não ajudam no mar.
+    expect(horas([membro('Ana', { ...barco, fator_viagem: 2 }), membro('Bia', { fator_viagem: 2 })], mar)).toBe(4);
+  });
+
+  it('um guia tira a penalidade do terreno dele, mas não o bônus das estradas', () => {
+    const daFloresta = mapaCom([A, 'hexForestPineSnowCovered00'], [B, 'hexPlains00']);
+    expect(horas([membro('Ana'), membro('Bia')], daFloresta)).toBe(6);
+    expect(horas([membro('Ana', { guia_floresta: 1 }), membro('Bia')], daFloresta)).toBe(3);
+    expect(horas([membro('Ana', { guia_floresta: 1, guia_neve: 1 })], daFloresta)).toBe(2);
+    const daVila = mapaCom([A, 'hexDirtVillage00'], [B, 'hexPlains00']);
+    expect(horas([membro('Ana', { guia_povoado: 1 })], daVila)).toBe(1);
+  });
+
+  it('a explicação mostra o guia', () => {
+    const daFloresta = mapaCom([A, 'hexForestBroadleaf00'], [B, 'hexPlains00']);
+    const passo = tempoDoPasso(VIAGEM, daFloresta, A, B, 'normal', [membro('Ana', { guia_floresta: 1 })]);
+    expect(passo.ok && passo.partes.map((p) => p.texto)).toContain('Floresta, sem penalidade (guia: Ana)');
+  });
+});
+
 describe('conferência e leitura', () => {
   it('as regras padrão não têm problema e voltam iguais depois de gravadas', () => {
     expect(problemasNaViagem(VIAGEM)).toEqual([]);
@@ -115,6 +182,14 @@ describe('conferência e leitura', () => {
     ['tile com tag que não existe', { tagsPorTile: { hexPlains00: ['lamaçal'] } }, 'não existe'],
   ])('aponta problemas: %s', (_nome, mudanca, trecho) => {
     expect(problemasNaViagem({ ...VIAGEM, ...mudanca }).map((p) => p.erro).join(' ')).toContain(trecho);
+  });
+
+  it('tags gravadas antes dos barcos: só a água é navegável', () => {
+    const antigas = JSON.parse(JSON.stringify(VIAGEM));
+    for (const tag of antigas.tags) {
+      delete tag.navegavel;
+    }
+    expect(lerViagem(antigas, VIAGEM)).toEqual(VIAGEM);
   });
 
   it('um bloco gravado sem a hora da partida e o descanso ganha os padrões', () => {

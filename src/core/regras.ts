@@ -102,6 +102,33 @@ export const VARIAVEIS_DO_EQUIPAMENTO: Readonly<Record<string, { readonly rotulo
   escudo_bonus: { rotulo: 'Bônus do escudo', padrao: 0 },
 };
 
+/**
+ * Valores de viagem da ficha. Começam no padrão e mudam só por efeitos: uma montaria,
+ * um barco, uma luneta. O grupo junta os valores dos membros (`viagem.ts`).
+ */
+export const VALORES_DE_VIAGEM: Readonly<Record<string, { readonly rotulo: string; readonly padrao: number }>> = {
+  fator_viagem: { rotulo: 'Velocidade de viagem (×)', padrao: 1 },
+  visao_hexes: { rotulo: 'Alcance da visão no mapa (hexes)', padrao: 1 },
+  veiculo_terra_lugares: { rotulo: 'Lugares no veículo terrestre', padrao: 0 },
+  // Sem veículo, o fator é zero: um barco a remo (×0,5) ainda é melhor que nenhum barco.
+  veiculo_terra_fator: { rotulo: 'Velocidade do veículo terrestre (×)', padrao: 0 },
+  veiculo_agua_lugares: { rotulo: 'Lugares no barco', padrao: 0 },
+  veiculo_agua_fator: { rotulo: 'Velocidade do barco (×)', padrao: 0 },
+};
+
+/** Um guia (1) tira a penalidade de um tipo de terreno para o grupo todo, como `guia_floresta`. */
+export const PREFIXO_GUIA = 'guia_';
+
+/** Os valores de viagem, com um guia para cada tag de terreno que se pode atravessar. */
+export function valoresDeViagem(regras: Regras): { readonly id: string; readonly rotulo: string; readonly padrao: number }[] {
+  return [
+    ...Object.entries(VALORES_DE_VIAGEM).map(([id, v]) => ({ id, ...v })),
+    ...regras.viagem.tags
+      .filter((t) => !t.intransponivel)
+      .map((t) => ({ id: `${PREFIXO_GUIA}${t.id}`, rotulo: `Guia em ${t.nome.toLowerCase()} (1 sim, 0 não)`, padrao: 0 })),
+  ];
+}
+
 /** Nomes que só existem dentro de certas fórmulas. */
 export const NOME_DO_VALOR_NO_MODIFICADOR = 'valor';
 export const NOMES_LOCAIS_DA_PERICIA = ['atributo', 'proficiencia'] as const;
@@ -130,6 +157,7 @@ export function nomesDasRegras(regras: Regras): ReadonlySet<string> {
     ...ATRIBUTOS,
     ...Object.keys(ENTRADAS_DA_FICHA),
     ...Object.keys(VARIAVEIS_DO_EQUIPAMENTO),
+    ...valoresDeViagem(regras).map((v) => v.id),
     ...ATRIBUTOS.map(idSalvaguarda),
     ...regras.pericias.map((p) => p.id),
     ...regras.valores.map((v) => v.id),
@@ -148,6 +176,7 @@ export function rotuloDoNome(regras: Regras, nome: string): string {
   return (
     ENTRADAS_DA_FICHA[nome] ??
     VARIAVEIS_DO_EQUIPAMENTO[nome]?.rotulo ??
+    valoresDeViagem(regras).find((v) => v.id === nome)?.rotulo ??
     regras.pericias.find((p) => p.id === nome)?.nome ??
     regras.valores.find((v) => v.id === nome)?.nome ??
     (nome === NOME_NIVEL_DA_CLASSE ? 'Nível na classe' : nome)
@@ -218,6 +247,7 @@ export function conferirRegras(regras: Regras): ProblemaNasRegras[] {
     ...ATRIBUTOS,
     ...Object.keys(ENTRADAS_DA_FICHA),
     ...Object.keys(VARIAVEIS_DO_EQUIPAMENTO),
+    ...valoresDeViagem(regras).map((v) => v.id),
     ...ATRIBUTOS.map(idSalvaguarda),
   ]);
   for (const { id, nome } of [...regras.pericias, ...regras.valores]) {

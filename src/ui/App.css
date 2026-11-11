@@ -2457,3 +2457,27 @@ fieldset.formulario {
 .regras-metodos .tela-dica {
   margin: 0;
 }
+
+/* Trava de edição do mapa: bem visível, para o mestre saber se está editando. */
+.trava-mapa {
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 7px 8px;
+  border: 1px solid #333846;
+  border-radius: 4px;
+  background: #2a2e3a;
+  color: #b9bcc6;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+}
+
+.trava-mapa:hover {
+  background: #363b4a;
+}
+
+.trava-mapa[aria-pressed='true'] {
+  border-color: #f0c870;
+  background: #3a3424;
+  color: #f0c870;
+}

@@ -10,7 +10,7 @@ import { criarMapaVazio, type EstadoMapa } from './mapa';
 import type { Permissao } from './permissoes';
 import { autorDe, criarEmissor, type OpcoesRegistro } from './registro';
 import { ehMestre } from './visibilidade';
-import { REGRAS_DE_VIAGEM_PADRAO, tempoDoPasso, type RegrasDeViagem } from './viagem';
+import { REGRAS_DE_VIAGEM_PADRAO, tempoDoPasso, type MembroNaViagem, type RegrasDeViagem } from './viagem';
 
 export const MINUTOS_POR_DIA = 24 * 60;
 
@@ -63,6 +63,11 @@ export interface EstadoGrupo {
   readonly viajadoHoje: number;
   /** Da mais antiga para a mais nova; só o mestre vê. */
   readonly historico: readonly EntradaDaViagem[];
+  /**
+   * Hexes a mais de visão que o mestre dá a um membro enquanto durar um efeito, como voar.
+   * Só quem controla aquela ficha enxerga mais longe.
+   */
+  readonly visaoExtra: Readonly<Record<string, number>>;
 }
 
 /** Guarda as últimas entradas: o diário é para consulta, não um arquivo eterno. */
@@ -76,6 +81,7 @@ export const GRUPO_INICIAL: EstadoGrupo = {
   relogio: REGRAS_DE_VIAGEM_PADRAO.horaDaPartida * 60,
   viajadoHoje: 0,
   historico: [],
+  visaoExtra: {},
 };
 
 /** Mesmo nome de antes, para quem só precisa de um grupo vazio. */
@@ -90,6 +96,8 @@ export type AcaoGrupo =
   | { readonly tipo: 'RemoverMembro'; readonly fichaId: string }
   | { readonly tipo: 'DefinirLider'; readonly fichaId: string | null }
   | { readonly tipo: 'DefinirRitmo'; readonly ritmo: string }
+  /** Visão extra temporária de um membro; zero tira. */
+  | { readonly tipo: 'DefinirVisaoExtra'; readonly fichaId: string; readonly extra: number }
   /** Até a partida seguinte, com o mínimo de horas de descanso. Zera as horas do dia. */
   | { readonly tipo: 'Acampar' }
   | { readonly tipo: 'AvancarTempo'; readonly minutos: number }
@@ -106,12 +114,15 @@ export interface ContextoDoGrupo {
   readonly obterViagem: () => RegrasDeViagem;
   /** Quem controla a ficha, ou `null` se ela não existe (foi apagada). */
   readonly obterDonoDaFicha: (fichaId: string) => string | null;
+  /** O nome e os valores de viagem da ficha, com os efeitos (montarias, barcos, guias, visão). */
+  readonly obterMembroNaViagem: (fichaId: string) => MembroNaViagem | null;
 }
 
 export const CONTEXTO_VAZIO: ContextoDoGrupo = {
   obterMapa: criarMapaVazio,
   obterViagem: () => REGRAS_DE_VIAGEM_PADRAO,
   obterDonoDaFicha: () => null,
+  obterMembroNaViagem: () => null,
 };
 
 // ---------- Relógio ----------
@@ -159,6 +170,31 @@ export function quemConduz(estado: EstadoGrupo, contexto: ContextoDoGrupo): stri
   return lider === null ? null : contexto.obterDonoDaFicha(lider);
 }
 
+/** Os membros como a viagem os enxerga, para montarias, veículos e guias. */
+export function membrosNaViagem(estado: EstadoGrupo, contexto: ContextoDoGrupo): MembroNaViagem[] {
+  return membrosPresentes(estado, contexto)
+    .map((id) => contexto.obterMembroNaViagem(id))
+    .filter((m): m is MembroNaViagem => m !== null);
+}
+
+/**
+ * Até onde um jogador enxerga no mapa, em hexes: 1 são os 6 vizinhos do grupo. Vale o maior
+ * alcance entre os personagens dele que estão no grupo, com a visão extra que o mestre deu.
+ * Quem voa vê mais longe; os outros só sabem o que ele contar.
+ */
+export function alcanceDaVisao(estado: EstadoGrupo, participanteId: string, contexto: ContextoDoGrupo): number {
+  let alcance = 1;
+  for (const id of membrosPresentes(estado, contexto)) {
+    if (contexto.obterDonoDaFicha(id) !== participanteId) {
+      continue;
+    }
+    const membro = contexto.obterMembroNaViagem(id);
+    const daFicha = membro ? membro.valor('visao_hexes') : 1;
+    alcance = Math.max(alcance, daFicha + (estado.visaoExtra[id] ?? 0));
+  }
+  return Math.floor(alcance);
+}
+
 // ---------- Permissões ----------
 
 /** O que quem controla o líder pode fazer; o resto é só do mestre. */
@@ -193,6 +229,14 @@ export function permissaoNoGrupo(
 }
 
 // ---------- Aplicar ações ----------
+
+function semChave(registro: Readonly<Record<string, number>>, chave: string): Readonly<Record<string, number>> {
+  if (!(chave in registro)) {
+    return registro;
+  }
+  const { [chave]: _tirada, ...resto } = registro;
+  return resto;
+}
 
 /** O resultado de uma ação: o estado novo (o mesmo objeto se nada mudou) ou o motivo da recusa. */
 export type ResultadoNoGrupo =
@@ -242,7 +286,14 @@ export function aplicarAcaoGrupo(
       if (estado.posicao === null) {
         return recusa('O grupo ainda não está no mapa.');
       }
-      const passo = tempoDoPasso(viagem, contexto.obterMapa(), estado.posicao, acao.para, estado.ritmo);
+      const passo = tempoDoPasso(
+        viagem,
+        contexto.obterMapa(),
+        estado.posicao,
+        acao.para,
+        estado.ritmo,
+        membrosNaViagem(estado, contexto),
+      );
       if (!passo.ok) {
         return recusa(passo.motivo);
       }
@@ -280,7 +331,27 @@ export function aplicarAcaoGrupo(
         membros: estado.membros.filter((id) => id !== acao.fichaId),
         // Sem o líder, o grupo fica sem líder até o mestre escolher outro.
         liderId: estado.liderId === acao.fichaId ? null : estado.liderId,
+        visaoExtra: semChave(estado.visaoExtra, acao.fichaId),
       });
+
+    case 'DefinirVisaoExtra': {
+      if (!Number.isInteger(acao.extra) || acao.extra < 0) {
+        return recusa('A visão extra é um número inteiro de hexes, zero ou mais.');
+      }
+      if (!estado.membros.includes(acao.fichaId)) {
+        return recusa('Só um membro do grupo ganha visão extra.');
+      }
+      if ((estado.visaoExtra[acao.fichaId] ?? 0) === acao.extra) {
+        return ok(estado);
+      }
+      return ok({
+        ...estado,
+        visaoExtra:
+          acao.extra === 0
+            ? semChave(estado.visaoExtra, acao.fichaId)
+            : { ...estado.visaoExtra, [acao.fichaId]: acao.extra },
+      });
+    }
 
     case 'DefinirLider':
       if (acao.fichaId === estado.liderId) {

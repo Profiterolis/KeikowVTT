@@ -6,7 +6,8 @@ import { criarCalculo, type Calculo, type EfeitoAtivo, type EntradaDoCalculo, ty
 import { ATRIBUTOS, type Atributo, type Entrada, type EntradaDe } from './entradas';
 import { entradaDaFicha, nivelTotal, pvPorNivel, type Ficha } from './fichas';
 import type { ResultadoFormula } from './formulas';
-import { encontrarPericia, idSalvaguarda, type Regras } from './regras';
+import { encontrarPericia, idSalvaguarda, valoresDeViagem, type Regras } from './regras';
+import type { MembroNaViagem } from './viagem';
 
 export interface ProficienciaDaFicha {
   readonly valor: number;
@@ -118,6 +119,22 @@ export function entradaDoCalculo(ficha: Ficha, regras: Regras): EntradaDoCalculo
 
 export function calcularFicha(ficha: Ficha, regras: Regras): Calculo {
   return criarCalculo(regras, entradaDoCalculo(ficha, regras));
+}
+
+/**
+ * A ficha como a viagem a enxerga: o nome e os valores de viagem (montaria, veículo, guia, visão).
+ * Um valor com problema numa fórmula de efeito vale o padrão, para não travar a viagem.
+ */
+export function membroNaViagem(ficha: Ficha, regras: Regras): MembroNaViagem {
+  const calculo = calcularFicha(ficha, regras);
+  const padroes = new Map(valoresDeViagem(regras).map((v) => [v.id, v.padrao]));
+  return {
+    nome: ficha.nome.trim() || 'Sem nome',
+    valor: (nome) => {
+      const calculado = calculo.valor(nome);
+      return calculado.ok ? calculado.valor : (padroes.get(nome) ?? 0);
+    },
+  };
 }
 
 /** Uma habilidade da ficha, com de onde ela vem. */
