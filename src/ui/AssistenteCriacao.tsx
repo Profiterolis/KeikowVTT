@@ -4,6 +4,7 @@ import type { Participante } from '../core/campanha';
 import { buscarEntradas, type EstadoCompendio } from '../core/compendio';
 import {
   concluirCriacao,
+  aumentoNaCompra,
   custoDosPontos,
   escolhasDaFicha,
   fichaDaCriacao,
@@ -561,7 +562,7 @@ function PassoAtributos({
       </div>
       {escolhas.metodo === 'pontos' && (
         <p className="tela-dica">
-          {custo.ok ? `Pontos gastos: ${custo.gastos} de ${criacao.pontos}.` : custo.erro} Cada atributo vai de {valoresPossiveis[0]} a{' '}
+          {custo.ok ? `Pontos gastos: ${custo.gastos} de ${criacao.pontos} (sobram ${criacao.pontos - custo.gastos}).` : custo.erro} Cada atributo vai de {valoresPossiveis[0]} a{' '}
           {valoresPossiveis.at(-1)}.
         </p>
       )}
@@ -580,6 +581,7 @@ function PassoAtributos({
           const valor = escolhas.atributos[a];
           const final = valorFinal(a);
           const bonus = especie?.dados.aumentosAtributo[a];
+          const aumento = aumentoNaCompra(criacao, escolhas.atributos, a);
           const passo = (delta: number) => {
             const proximo = valoresPossiveis[valoresPossiveis.indexOf(valor) + delta];
             if (proximo !== undefined) {
@@ -595,7 +597,7 @@ function PassoAtributos({
                     −
                   </button>
                   <strong>{valor}</strong>
-                  <button type="button" title="Mais um" disabled={valor >= (valoresPossiveis.at(-1) ?? valor)} onClick={() => passo(1)}>
+                  <button type="button" title={aumento.ok ? 'Mais um' : aumento.motivo} disabled={!aumento.ok} onClick={() => passo(1)}>
                     +
                   </button>
                 </span>

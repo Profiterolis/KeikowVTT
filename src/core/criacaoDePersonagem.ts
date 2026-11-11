@@ -47,6 +47,36 @@ export function custoDosPontos(
   return { ok: true, gastos };
 }
 
+/**
+ * Se o "+" da compra de pontos pode subir este atributo para o próximo valor da tabela:
+ * precisa existir um valor acima e sobrar pontos para pagar a diferença de custo.
+ */
+export function aumentoNaCompra(
+  criacao: RegrasDeCriacao,
+  valores: ValoresDeAtributo,
+  atributo: Atributo,
+): { readonly ok: true; readonly proximo: number } | { readonly ok: false; readonly motivo: string } {
+  const tabela = [...criacao.custos].sort((a, b) => a.valor - b.valor);
+  const atual = tabela.findIndex((c) => c.valor === valores[atributo]);
+  const proximo = tabela[atual + 1];
+  if (atual < 0 || !proximo) {
+    return { ok: false, motivo: `Na compra de pontos, o máximo é ${tabela.at(-1)?.valor ?? '—'}.` };
+  }
+  const gasto = custoDosPontos(criacao, valores);
+  if (!gasto.ok) {
+    return { ok: false, motivo: gasto.erro };
+  }
+  const diferenca = proximo.custo - tabela[atual].custo;
+  const sobram = criacao.pontos - gasto.gastos;
+  if (diferenca > sobram) {
+    return {
+      ok: false,
+      motivo: `Subir para ${proximo.valor} custa ${diferenca} ${diferenca === 1 ? 'ponto' : 'pontos'}, e ${sobram === 1 ? 'sobra 1' : `sobram ${sobram}`}.`,
+    };
+  }
+  return { ok: true, proximo: proximo.valor };
+}
+
 /** Os mesmos números, em qualquer ordem. */
 function mesmosValores(a: readonly number[], b: readonly number[]): boolean {
   const ordenar = (lista: readonly number[]) => [...lista].sort((x, y) => x - y).join(',');

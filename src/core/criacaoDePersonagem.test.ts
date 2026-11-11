@@ -4,6 +4,7 @@ import { aplicarAcaoCompendio, criarCompendioVazio } from './compendio';
 import {
   classeDaSubida,
   concluirCriacao,
+  aumentoNaCompra,
   custoDosPontos,
   escolhasDaFicha,
   escolhasIniciais,
@@ -105,6 +106,17 @@ describe('atributos', () => {
     expect(custoDosPontos(R.criacao, tudo(8))).toEqual({ ok: true, gastos: 0 });
     expect(custoDosPontos(R.criacao, { ...tudo(8), for: 15, des: 15, con: 15 })).toEqual({ ok: true, gastos: 27 });
     expect(custoDosPontos(R.criacao, { ...tudo(8), for: 16 })).toMatchObject({ ok: false, erro: expect.stringContaining('de 8 a 15') });
+  });
+
+  it('o "+" da compra só sobe com pontos sobrando para a diferença de custo', () => {
+    expect(aumentoNaCompra(R.criacao, tudo(8), 'for')).toEqual({ ok: true, proximo: 9 });
+    // 15, 15, 14 e 9 gastam 26: sobra 1, que paga um 9, mas não o 14 → 15 (2 pontos).
+    const quase = { ...tudo(8), for: 15, des: 15, con: 14, int: 9 };
+    expect(aumentoNaCompra(R.criacao, quase, 'sab')).toEqual({ ok: true, proximo: 9 });
+    expect(aumentoNaCompra(R.criacao, quase, 'con')).toEqual({ ok: false, motivo: 'Subir para 15 custa 2 pontos, e sobra 1.' });
+    const cheio = { ...tudo(8), for: 15, des: 15, con: 15 };
+    expect(aumentoNaCompra(R.criacao, cheio, 'int')).toEqual({ ok: false, motivo: 'Subir para 9 custa 1 ponto, e sobram 0.' });
+    expect(aumentoNaCompra(R.criacao, { ...tudo(8), for: 15 }, 'for')).toEqual({ ok: false, motivo: 'Na compra de pontos, o máximo é 15.' });
   });
 
   it('confere cada método', () => {
