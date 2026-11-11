@@ -6,6 +6,7 @@
 import { ATRIBUTOS, type Atributo } from './entradas';
 import { lerFormula, normalizarNome, usoDaFormula, type FormulaLida } from './formulas';
 import { ehObjeto, ErroDeFormato, exigir } from './persistencia';
+import { lerNoite, problemasNaNoite, type RegrasDaNoite } from './regrasDaNoite';
 import { lerViagem, problemasNaViagem, type RegrasDeViagem } from './viagem';
 
 export interface DefinicaoValor {
@@ -78,6 +79,8 @@ export interface Regras {
   readonly criacao: RegrasDeCriacao;
   /** Tempo de viagem no hexcrawl: tamanho do hex, ritmos e tags de terreno. */
   readonly viagem: RegrasDeViagem;
+  /** A noite no acampamento: turnos, descanso, ações e encontros (Fase 5.5). */
+  readonly noite: RegrasDaNoite;
 }
 
 /** Valores que vêm da própria ficha, e não de uma fórmula. */
@@ -114,6 +117,8 @@ export const VALORES_DE_VIAGEM: Readonly<Record<string, { readonly rotulo: strin
   veiculo_terra_fator: { rotulo: 'Velocidade do veículo terrestre (×)', padrao: 0 },
   veiculo_agua_lugares: { rotulo: 'Lugares no barco', padrao: 0 },
   veiculo_agua_fator: { rotulo: 'Velocidade do barco (×)', padrao: 0 },
+  // Na noite: soma à Percepção passiva de quem é alvo de um furto (um cadeado, um cão de guarda).
+  defesa_furto: { rotulo: 'Defesa contra furto (soma à Percepção passiva)', padrao: 0 },
 };
 
 /** Um guia (1) tira a penalidade de um tipo de terreno para o grupo todo, como `guia_floresta`. */
@@ -348,6 +353,7 @@ export function conferirRegras(regras: Regras): ProblemaNasRegras[] {
   }
   problemas.push(...problemasNaCriacao(regras.criacao));
   problemas.push(...problemasNaViagem(regras.viagem));
+  problemas.push(...problemasNaNoite(regras.noite));
   return problemas;
 }
 
@@ -436,6 +442,7 @@ function lerCriacao(valor: unknown, padrao: RegrasDeCriacao): RegrasDeCriacao {
 export interface PadroesDasRegras {
   readonly criacao?: RegrasDeCriacao;
   readonly viagem?: RegrasDeViagem;
+  readonly noite?: RegrasDaNoite;
 }
 
 export function lerRegras(valor: unknown, padrao: PadroesDasRegras = {}): Regras {
@@ -495,6 +502,10 @@ export function lerRegras(valor: unknown, padrao: PadroesDasRegras = {}): Regras
     viagem: (() => {
       exigir(valor.viagem !== undefined || padrao.viagem !== undefined, 'As regras estão sem a viagem.');
       return lerViagem(valor.viagem, padrao.viagem!);
+    })(),
+    noite: (() => {
+      exigir(valor.noite !== undefined || padrao.noite !== undefined, 'As regras estão sem a noite.');
+      return lerNoite(valor.noite, padrao.noite!);
     })(),
   };
   const problemas = conferirRegras(regras);

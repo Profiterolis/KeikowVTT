@@ -117,6 +117,23 @@ describe('salvar e ler fichas', () => {
     expect(lido.ok && lido.estado.fichas.h1.rascunho).toBeNull();
   });
 
+  it('fichas da versão 7 ganham estudos e idiomas vazios', () => {
+    const objeto = fichasParaObjeto(exemplo());
+    const { estudos: _e, idiomas: _i, ...antiga } = objeto.fichas[0];
+    const lido = desserializarFichas(comoTexto({ ...objeto, versao: 7, fichas: [antiga] }));
+    expect(lido.ok && lido.estado.fichas.h1).toMatchObject({ estudos: [], idiomas: [] });
+  });
+
+  it('estudos e idiomas voltam iguais', () => {
+    const base = exemplo();
+    const h1 = base.fichas.h1;
+    const estado = {
+      fichas: { ...base.fichas, h1: { ...h1, estudos: [{ id: 'e1', tipo: 'idioma' as const, assunto: 'Élfico', magiaId: null, turnos: 3 }], idiomas: ['Anão'] } },
+    };
+    const lido = desserializarFichas(serializarFichas(estado));
+    expect(lido.ok && lido.estado.fichas.h1).toMatchObject({ estudos: estado.fichas.h1.estudos, idiomas: ['Anão'] });
+  });
+
   it('rascunhos da versão 6 ganham o kit vazio, e os itens da ficha viram os itens livres', () => {
     const objeto = fichasParaObjeto(exemplo());
     const ficha = objeto.fichas[0] as unknown as Record<string, unknown>;

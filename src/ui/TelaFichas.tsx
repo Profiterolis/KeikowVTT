@@ -26,6 +26,7 @@ import {
   podeVerFicha,
 } from '../core/permissoes';
 import { entregarKit } from '../core/kits';
+import { concluirEstudo } from '../core/noite';
 import { JanelaDarKit } from './JanelaDarKit';
 import { MenuDeContexto, type MenuAberto } from './MenuDeContexto';
 import type { Mesa } from './mesa';
@@ -623,6 +624,7 @@ function EditorFicha({ ficha, compendio, participantes, lojaFichas, lojaRolagens
       <BlocoEspacos ficha={ficha} calculo={calculo} editar={editar} podeAgir={podeAgir} />
       <BlocoTestes ficha={ficha} calculo={calculo} editar={editar} explicar={explicar} mesa={mesa} />
       {ficha.tipo !== 'monstro' && <BlocoViagem calculo={calculo} explicar={explicar} />}
+      <BlocoEstudos ficha={ficha} compendio={compendio} mestre={mestre} editar={editar} />
       {ficha.tipo !== 'monstro' && (
         <fieldset className="grupo-transparente" disabled={!tudo} title={motivo ?? undefined}>
           <BlocoDadosDeVida ficha={ficha} editar={editar} />
@@ -997,6 +999,52 @@ function BlocoViagem({ calculo, explicar }: Pick<PropsBloco, 'calculo' | 'explic
           </div>
         ))}
       </div>
+    </section>
+  );
+}
+
+/**
+ * Estudos feitos à noite e idiomas aprendidos. O mestre decide quando um estudo termina:
+ * a magia entra na ficha, ou o idioma entra na lista.
+ */
+function BlocoEstudos({
+  ficha,
+  compendio,
+  mestre,
+  editar,
+}: Pick<PropsBloco, 'ficha' | 'editar'> & { readonly compendio: EstadoCompendio; readonly mestre: boolean }) {
+  if (ficha.estudos.length === 0 && ficha.idiomas.length === 0) {
+    return null;
+  }
+  return (
+    <section className="ficha-secao">
+      <h3>Estudos e idiomas</h3>
+      {ficha.idiomas.length > 0 && <p>Idiomas aprendidos: {ficha.idiomas.join(', ')}</p>}
+      {ficha.estudos.length > 0 && (
+        <ul className="assistente-itens">
+          {ficha.estudos.map((e) => (
+            <li key={e.id}>
+              <span>
+                {e.tipo === 'magia' ? 'Magia' : 'Idioma'}: {e.assunto} · {e.turnos} {e.turnos === 1 ? 'turno' : 'turnos'} de estudo
+              </span>
+              {mestre && (
+                <span className="carta-quantidade">
+                  <button
+                    type="button"
+                    title={e.tipo === 'magia' ? 'A magia entra na ficha' : 'O idioma entra na lista de idiomas aprendidos'}
+                    onClick={() => editar(concluirEstudo(ficha, e.id, compendio), `estudo-${e.id}`)}
+                  >
+                    Concluir estudo
+                  </button>
+                  <button type="button" title="Tirar este estudo" onClick={() => editar({ ...ficha, estudos: ficha.estudos.filter((x) => x !== e) }, `estudo-${e.id}`)}>
+                    ✕
+                  </button>
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

@@ -116,6 +116,8 @@ const COM_EDICAO_LIBERADA: readonly [keyof Ficha, string][] = [
   ['pvPorNivel', 'os dados de vida'],
   ['extras', 'as habilidades e magias acrescentadas'],
   ['rascunho', 'os atributos rolados na criação'],
+  ['estudos', 'os estudos'],
+  ['idiomas', 'os idiomas aprendidos'],
 ];
 
 /** Campos do dia a dia, que o dono muda sempre. Quem recebe um presente não muda nenhum deles. */

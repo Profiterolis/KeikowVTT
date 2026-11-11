@@ -10,6 +10,7 @@ import {
 import { chaveHex, type CoordHex, type PontoMundo } from '../core/hex';
 import { criarLojaCampanha, ID_MESTRE, type LojaCampanha } from '../core/campanha';
 import { ehMestre } from '../core/permissoes';
+import { VISIVEL_A_TODOS } from '../core/visibilidade';
 import { criarLojaCompendio, type LojaCompendio } from '../core/compendio';
 import { criarLojaFichas, type LojaFichas } from '../core/fichas';
 import { criarLojaRolagens, type LojaRolagens } from '../core/rolagens';
@@ -22,6 +23,7 @@ import {
   votosValidos,
   grupoVistoPor,
   membrosPresentes,
+  quemJaEscolheu,
   motivoParaNaoConduzir,
   passosPossiveis,
   podeConduzir,
@@ -33,6 +35,8 @@ import {
 import { ExplicacaoDoPasso } from './ExplicacaoDoPasso';
 import { BarraDoGrupo } from './BarraDoGrupo';
 import { problemaNosItensDaCriacao } from '../core/kits';
+import { criarLojaNotificacoes, type LojaNotificacoes } from '../core/notificacoes';
+import { Notificacoes } from './Notificacoes';
 import { PainelDiario } from './PainelDiario';
 import { PainelGrupo } from './PainelGrupo';
 import { membroNaViagem } from '../core/calculoDaFicha';
@@ -45,11 +49,13 @@ import {
   lerCampanhaLocal,
   lerCompendioLocal,
   lerFichasLocal,
+  lerNotificacoesLocal,
   lerRolagensLocal,
   lerSalvamentoLocal,
   manterCampanhaLocal,
   manterCompendioLocal,
   manterFichasLocal,
+  manterNotificacoesLocal,
   manterRolagensLocal,
   manterSalvamentoLocal,
 } from '../net/salvamentoLocal';
@@ -102,6 +108,7 @@ interface EditorCarregado {
   readonly lojaCompendio: LojaCompendio;
   readonly lojaFichas: LojaFichas;
   readonly lojaRolagens: LojaRolagens;
+  readonly lojaNotificacoes: LojaNotificacoes;
   readonly lojaRegras: LojaRegras;
   readonly sessao: Sessao;
   readonly aviso: Mensagem | null;
@@ -123,12 +130,13 @@ const ARMAZENAMENTO = criarArmazenamentoNavegador();
 
 async function iniciarEditor(): Promise<EditorCarregado> {
   pedirProtecaoDosDados();
-  const [salvo, salvaCampanha, salvoCompendio, salvasFichas, salvasRolagens] = await Promise.all([
+  const [salvo, salvaCampanha, salvoCompendio, salvasFichas, salvasRolagens, salvasNotificacoes] = await Promise.all([
     lerSalvamentoLocal(ARMAZENAMENTO, localStorage),
     lerCampanhaLocal(ARMAZENAMENTO, localStorage),
     lerCompendioLocal(ARMAZENAMENTO, localStorage),
     lerFichasLocal(ARMAZENAMENTO, localStorage),
     lerRolagensLocal(ARMAZENAMENTO, localStorage),
+    lerNotificacoesLocal(ARMAZENAMENTO, localStorage),
   ]);
   const campanha = salvaCampanha?.ok ? salvaCampanha : null;
   const mapa = salvo?.ok ? salvo : null;
@@ -167,8 +175,27 @@ async function iniciarEditor(): Promise<EditorCarregado> {
       const ficha = lojaFichas.obterEstado().fichas[fichaId];
       return ficha ? membroNaViagem(ficha, lojaRegras.obterEstado()) : null;
     },
+    obterNoite: () => lojaRegras.obterEstado().noite,
   };
   const lojaGrupo = criarLojaGrupo(mapa?.grupo, opcoesRegistro, contextoGrupo);
+  // Notificações ilegíveis não impedem de abrir: começam vazias.
+  const lojaNotificacoes = criarLojaNotificacoes(salvasNotificacoes?.ok ? salvasNotificacoes.estado : undefined);
+  // Quando uma eleição termina (havia uma e não há mais, com resultado), todos ficam sabendo.
+  let eleicaoAntes = lojaGrupo.obterEstado().eleicao;
+  lojaGrupo.assinar((grupo) => {
+    const resultado = grupo.ultimaEleicao;
+    if (eleicaoAntes && !grupo.eleicao && resultado) {
+      const nome = (id: string) => lojaFichas.obterEstado().fichas[id]?.nome.trim() || 'Sem nome';
+      lojaNotificacoes.notificar({
+        icone: '🗳️',
+        texto: resultado.vencedorId
+          ? `A eleição terminou: ${nome(resultado.vencedorId)} lidera o grupo${resultado.desempatePeloMestre ? ' (desempate do mestre)' : ''}.`
+          : 'A eleição terminou sem votos: a liderança não mudou.',
+        visibilidade: VISIVEL_A_TODOS,
+      });
+    }
+    eleicaoAntes = grupo.eleicao;
+  });
   return {
     loja,
     lojaGrupo,
@@ -179,6 +206,7 @@ async function iniciarEditor(): Promise<EditorCarregado> {
     lojaFichas,
     // Um registro de rolagens ilegível não impede de abrir: começa vazio.
     lojaRolagens: criarLojaRolagens(salvasRolagens?.ok ? salvasRolagens.rolagens : []),
+    lojaNotificacoes,
     lojaRegras,
     sessao,
     aviso: falha
@@ -251,6 +279,7 @@ function Editor({
   lojaCompendio,
   lojaFichas,
   lojaRolagens,
+  lojaNotificacoes,
   lojaRegras,
   sessao,
   aviso,
@@ -457,6 +486,17 @@ function Editor({
         localStorage,
       ),
     [lojaRolagens],
+  );
+
+  useEffect(
+    () =>
+      manterNotificacoesLocal(
+        lojaNotificacoes,
+        () => setMensagem({ tipo: 'erro', texto: 'O navegador recusou guardar as notificações.' }),
+        ARMAZENAMENTO,
+        localStorage,
+      ),
+    [lojaNotificacoes],
   );
 
   useEffect(() => {
@@ -848,6 +888,7 @@ function Editor({
               setPainelLateral(painelLateral === 'grupo' ? null : 'grupo');
             }}
             avisoEleicao={avisoDaEleicao(grupo, agindoComoId, contextoGrupo)}
+            avisoNoite={avisoDaNoite(grupo, agindoComoId, contextoGrupo)}
             diarioAberto={painelLateral === 'diario'}
             aoAlternarDiario={() => {
               setHexSelecionado(null);
@@ -870,6 +911,8 @@ function Editor({
             lojaGrupo={lojaGrupo}
             lojaFichas={lojaFichas}
             lojaRolagens={lojaRolagens}
+            lojaCompendio={lojaCompendio}
+            lojaNotificacoes={lojaNotificacoes}
             contexto={contextoGrupo}
             participantes={campanha.participantes}
             autorId={agindoComoId}
@@ -937,6 +980,7 @@ function Editor({
         />
       )}
       {telaAberta === 'creditos' && <TelaCreditos aoFechar={() => setTelaAberta(null)} />}
+      <Notificacoes loja={lojaNotificacoes} participanteId={agindoComoId} />
     </div>
     </ContextoRegras.Provider>
   );
@@ -957,4 +1001,25 @@ function avisoDaEleicao(grupo: EstadoGrupo, participanteId: string, contexto: Co
   const deveVotar =
     eleitores(grupo, contexto).includes(participanteId) && !(participanteId in votosValidos(grupo, contexto));
   return deveVotar ? '🗳️ Vote na eleição' : '🗳️ Eleição em andamento';
+}
+
+/**
+ * O que a barra avisa sobre a noite: quem tem personagem sem ação escolhida é chamado a escolher;
+ * o mestre vê quantos já escolheram; com o bloqueio, todos sabem.
+ */
+function avisoDaNoite(grupo: EstadoGrupo, participanteId: string, contexto: ContextoDoGrupo): string | null {
+  const { noite } = grupo;
+  if (!noite) {
+    return null;
+  }
+  if (grupo.noitesBloqueadas) {
+    return '🚫 Noite bloqueada pelo mestre';
+  }
+  const membros = membrosPresentes(grupo, contexto);
+  const escolheram = quemJaEscolheu(grupo, contexto);
+  if (ehMestre(participanteId)) {
+    return `🌙 Noite: turno ${noite.turno} (${escolheram.length}/${membros.length} escolheram)`;
+  }
+  const falta = membros.some((id) => contexto.obterDonoDaFicha(id) === participanteId && !escolheram.includes(id));
+  return falta ? '🌙 Noite: escolha sua ação' : `🌙 Noite: turno ${noite.turno}`;
 }

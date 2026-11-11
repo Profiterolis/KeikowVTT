@@ -10,6 +10,7 @@ import { hexEm } from './mapa';
 import { criarMapaVazio, type EstadoMapa } from './mapa';
 import type { Permissao } from './permissoes';
 import { autorDe, criarEmissor, type OpcoesRegistro } from './registro';
+import { acoesDoLugar, REGRAS_DA_NOITE_PADRAO, type RegrasDaNoite, type TipoAcaoNoturna } from './regrasDaNoite';
 import { ehMestre } from './visibilidade';
 import {
   REGRAS_DE_VIAGEM_PADRAO,
@@ -64,7 +65,50 @@ export type AcontecimentoDaViagem =
   | { readonly tipo: 'avancou'; readonly ateAManha: boolean }
   | { readonly tipo: 'acertouRelogio' }
   /** Uma anotação livre do mestre, como "emboscada de goblins"; não mexe no relógio. */
-  | { readonly tipo: 'anotou'; readonly texto: string };
+  | { readonly tipo: 'anotou'; readonly texto: string }
+  /** Uma noite inteira, com o que aconteceu em cada turno (só o mestre lê). */
+  | {
+      readonly tipo: 'noite';
+      readonly lugar: LugarDoDescanso;
+      readonly nomeDoLugar: string;
+      readonly turnos: readonly { readonly turno: number; readonly linhas: readonly string[] }[];
+    };
+
+/**
+ * O que um personagem faz num turno da noite. Os campos a mais dependem do tipo da ação:
+ * o alvo do furto, a perícia do teste, o texto (ação livre, ou o idioma estudado), ou a magia
+ * estudada e a pilha do livro ou pergaminho de onde ela vem.
+ */
+export interface EscolhaNoturna {
+  readonly acaoId: string;
+  readonly alvoId?: string;
+  readonly pericia?: string;
+  readonly texto?: string;
+  readonly magiaId?: string;
+  readonly fontePilhaId?: string;
+}
+
+/** No lugar da escolha dos outros, para quem não é o mestre: mostra que já escolheu, não o quê. */
+export const ESCOLHA_SECRETA: EscolhaNoturna = { acaoId: '?' };
+
+/** Um turno da noite já resolvido. */
+export interface TurnoDaNoite {
+  readonly turno: number;
+  /** O resumo para o mestre (diário): quem fez o quê, encontros, furtos. */
+  readonly linhas: readonly string[];
+  /** As fichas que descansaram neste turno: contam para o descanso no fim da noite. */
+  readonly descansaram: readonly string[];
+}
+
+/** A noite em andamento: o turno atual, as escolhas dele e os turnos já resolvidos. */
+export interface NoiteNoGrupo {
+  readonly lugar: LugarDoDescanso;
+  readonly nomeDoLugar: string;
+  readonly turno: number;
+  /** Ficha → o que ela faz neste turno; some quando o turno é resolvido. */
+  readonly escolhas: Readonly<Record<string, EscolhaNoturna>>;
+  readonly turnos: readonly TurnoDaNoite[];
+}
 
 /** Uma linha do diário de viagem, que só o mestre vê. */
 export interface EntradaDaViagem {
@@ -129,6 +173,10 @@ export interface EstadoGrupo {
   readonly descansosPendentes: Readonly<Record<string, TipoDeDescanso>>;
   /** A eleição do líder em andamento, ou `null`. */
   readonly eleicao: Eleicao | null;
+  /** A noite em andamento (Fase 5.5), ou `null`. */
+  readonly noite: NoiteNoGrupo | null;
+  /** O mestre bloqueou as ações noturnas: algo impede o grupo de passar a noite. */
+  readonly noitesBloqueadas: boolean;
   readonly ultimaEleicao: ResultadoDaEleicao | null;
 }
 
@@ -148,6 +196,8 @@ export const GRUPO_INICIAL: EstadoGrupo = {
   descansosPendentes: {},
   eleicao: null,
   ultimaEleicao: null,
+  noite: null,
+  noitesBloqueadas: false,
 };
 
 /** Mesmo nome de antes, para quem só precisa de um grupo vazio. */
@@ -196,6 +246,15 @@ export type AcaoGrupo =
   | { readonly tipo: 'DesempatarEleicao'; readonly fichaId: string }
   /** Desfaz o último acontecimento do diário, com a posição e o relógio. */
   | { readonly tipo: 'DesfazerViagem' }
+  /** O líder (ou o mestre) começa a noite, no acampamento ou num abrigo. */
+  | { readonly tipo: 'ComecarNoite'; readonly lugar: LugarDoDescanso; readonly nomeDoLugar?: string }
+  /** O dono da ficha (ou o mestre) escolhe o que ela faz neste turno. */
+  | { readonly tipo: 'EscolherNoturna'; readonly fichaId: string; readonly escolha: EscolhaNoturna }
+  /** Só o mestre: guarda o turno resolvido; o último encerra a noite (relógio, descansos, diário). */
+  | { readonly tipo: 'ResolverTurno'; readonly resultado: TurnoDaNoite }
+  | { readonly tipo: 'CancelarNoite' }
+  /** Só o mestre: bloqueia (ou libera) as ações noturnas. */
+  | { readonly tipo: 'BloquearNoite'; readonly bloqueado: boolean }
   | { readonly tipo: 'CarregarGrupo'; readonly estado: EstadoGrupo };
 
 /** O que o grupo precisa saber de fora: o mapa, as regras e as fichas. */
@@ -206,6 +265,8 @@ export interface ContextoDoGrupo {
   readonly obterDonoDaFicha: (fichaId: string) => string | null;
   /** O nome e os valores de viagem da ficha, com os efeitos (montarias, barcos, guias, visão). */
   readonly obterMembroNaViagem: (fichaId: string) => MembroNaViagem | null;
+  /** As regras da noite; sem elas, valem as padrão. */
+  readonly obterNoite?: () => RegrasDaNoite;
 }
 
 export const CONTEXTO_VAZIO: ContextoDoGrupo = {
@@ -453,7 +514,11 @@ function apurar(estado: EstadoGrupo, contexto: ContextoDoGrupo): EstadoGrupo {
  * O grupo como um participante pode recebê-lo: o diário de viagem é só do mestre, então os
  * jogadores recebem o grupo sem ele, e sem saber em quem os outros votaram. No online, é isto que o servidor manda a cada jogador.
  */
-export function grupoVistoPor(estado: EstadoGrupo, participanteId: string): EstadoGrupo {
+export function grupoVistoPor(
+  estado: EstadoGrupo,
+  participanteId: string,
+  donoDe: (fichaId: string) => string | null = () => null,
+): EstadoGrupo {
   if (ehMestre(participanteId)) {
     return estado;
   }
@@ -467,13 +532,56 @@ export function grupoVistoPor(estado: EstadoGrupo, participanteId: string): Esta
       ]),
     ),
   };
-  return { ...estado, historico: [], eleicao };
+  // À noite, cada jogador vê o que os próprios personagens escolheram e só que os outros já escolheram;
+  // o resumo dos turnos é do mestre.
+  const noite = estado.noite && {
+    ...estado.noite,
+    escolhas: Object.fromEntries(
+      Object.entries(estado.noite.escolhas).map(([fichaId, escolha]) => [
+        fichaId,
+        donoDe(fichaId) === participanteId ? escolha : ESCOLHA_SECRETA,
+      ]),
+    ),
+    turnos: [],
+  };
+  return { ...estado, historico: [], eleicao, noite };
+}
+
+// ---------- Noite ----------
+
+function regrasDaNoite(contexto: ContextoDoGrupo): RegrasDaNoite {
+  return contexto.obterNoite?.() ?? REGRAS_DA_NOITE_PADRAO;
+}
+
+/** O que falta numa escolha noturna, conforme o tipo da ação. */
+function problemaNaEscolha(tipo: TipoAcaoNoturna, fichaId: string, escolha: EscolhaNoturna, membros: readonly string[]): string | null {
+  switch (tipo) {
+    case 'furto':
+      return escolha.alvoId && escolha.alvoId !== fichaId && membros.includes(escolha.alvoId)
+        ? null
+        : 'Escolha outro personagem do grupo para furtar.';
+    case 'pericia':
+      return escolha.pericia ? null : 'Escolha a perícia.';
+    case 'estudo':
+      if (escolha.magiaId) {
+        return escolha.fontePilhaId ? null : 'Para estudar uma magia, escolha o livro ou pergaminho.';
+      }
+      return escolha.texto?.trim() ? null : 'Diga o idioma, ou escolha uma magia de um livro ou pergaminho.';
+    default:
+      return null;
+  }
+}
+
+/** Quem já escolheu a ação deste turno, entre os membros. */
+export function quemJaEscolheu(estado: EstadoGrupo, contexto: ContextoDoGrupo): string[] {
+  const escolhas = estado.noite?.escolhas ?? {};
+  return membrosPresentes(estado, contexto).filter((id) => id in escolhas);
 }
 
 // ---------- Permissões ----------
 
 /** O que quem controla o líder pode fazer; o resto é só do mestre. */
-const ACOES_DO_LIDER: ReadonlySet<AcaoGrupo['tipo']> = new Set(['MoverGrupo', 'DefinirRitmo', 'Descansar', 'DefinirLider']);
+const ACOES_DO_LIDER: ReadonlySet<AcaoGrupo['tipo']> = new Set(['MoverGrupo', 'DefinirRitmo', 'Descansar', 'DefinirLider', 'ComecarNoite']);
 
 /**
  * O mestre pode tudo. Quem controla o líder anda, muda o ritmo, acampa e passa a liderança
@@ -500,6 +608,13 @@ export function permissaoNoGrupo(
       ? PERMITIDO
       : { ok: false, motivo: 'Só quem tem um personagem no grupo participa da eleição.' };
   }
+  // Cada um escolhe a ação noturna dos próprios personagens; o bloqueio do mestre vale para todos.
+  if (acao.tipo === 'EscolherNoturna') {
+    if (contexto.obterDonoDaFicha(acao.fichaId) !== autorId) {
+      return { ok: false, motivo: 'Só o dono da ficha (ou o mestre) escolhe a ação noturna dela.' };
+    }
+    return estado.noitesBloqueadas ? { ok: false, motivo: 'O mestre bloqueou as ações noturnas.' } : PERMITIDO;
+  }
   if (acao.tipo === 'CancelarEleicao') {
     return estado.eleicao?.pedidaPor === autorId
       ? PERMITIDO
@@ -519,6 +634,14 @@ export function permissaoNoGrupo(
   }
   if (acao.tipo === 'Descansar' && acao.lugar === 'abrigo' && !grupoNumPovoado(estado, contexto)) {
     return { ok: false, motivo: 'O líder só pede abrigo num povoado; fora dele, o mestre decide se há onde dormir.' };
+  }
+  if (acao.tipo === 'ComecarNoite') {
+    if (estado.noitesBloqueadas) {
+      return { ok: false, motivo: 'O mestre bloqueou as ações noturnas.' };
+    }
+    if (acao.lugar === 'abrigo' && !grupoNumPovoado(estado, contexto)) {
+      return { ok: false, motivo: 'O líder só pede abrigo num povoado; fora dele, o mestre decide se há onde dormir.' };
+    }
   }
   if (acao.tipo === 'DefinirLider' && acao.fichaId === null) {
     return { ok: false, motivo: 'O líder só passa a liderança para outro membro.' };
@@ -841,6 +964,85 @@ export function aplicarAcaoGrupo(
       }
       return ok({ ...estado, ...ultima.antes, historico: estado.historico.slice(0, -1) });
     }
+
+    case 'ComecarNoite':
+      if (estado.noite) {
+        return recusa('O grupo já está passando a noite.');
+      }
+      if (membrosPresentes(estado, contexto).length === 0) {
+        return recusa('O grupo não tem membros.');
+      }
+      return ok({
+        ...estado,
+        noite: { lugar: acao.lugar, nomeDoLugar: acao.nomeDoLugar?.trim() ?? '', turno: 1, escolhas: {}, turnos: [] },
+      });
+
+    case 'EscolherNoturna': {
+      const { noite } = estado;
+      if (!noite) {
+        return recusa('O grupo não está passando a noite.');
+      }
+      const membros = membrosPresentes(estado, contexto);
+      if (!membros.includes(acao.fichaId)) {
+        return recusa('Só um membro do grupo age à noite.');
+      }
+      const definicao = acoesDoLugar(regrasDaNoite(contexto), noite.lugar).find((a) => a.id === acao.escolha.acaoId);
+      if (!definicao) {
+        return recusa('Esta ação não existe aqui.');
+      }
+      const problema = problemaNaEscolha(definicao.tipo, acao.fichaId, acao.escolha, membros);
+      if (problema) {
+        return recusa(problema);
+      }
+      return ok({ ...estado, noite: { ...noite, escolhas: { ...noite.escolhas, [acao.fichaId]: acao.escolha } } });
+    }
+
+    case 'ResolverTurno': {
+      const { noite } = estado;
+      if (!noite) {
+        return recusa('O grupo não está passando a noite.');
+      }
+      if (acao.resultado.turno !== noite.turno) {
+        return recusa('Este turno já foi resolvido.');
+      }
+      const turnos = [...noite.turnos, acao.resultado];
+      const regras = regrasDaNoite(contexto);
+      if (noite.turno < regras.turnos) {
+        return ok({ ...estado, noite: { ...noite, turno: noite.turno + 1, escolhas: {}, turnos } });
+      }
+      // O último turno encerra a noite: cada membro ganha o descanso que conquistou.
+      const paraLongo = noite.lugar === 'abrigo' ? regras.turnosParaLongoNoAbrigo : regras.turnosParaLongo;
+      const pendentes = { ...estado.descansosPendentes };
+      for (const id of membrosPresentes(estado, contexto)) {
+        const descansou = turnos.filter((t) => t.descansaram.includes(id)).length;
+        const ganho: TipoDeDescanso | null =
+          descansou >= paraLongo ? 'longo' : descansou >= regras.turnosParaCurto ? 'curto' : null;
+        if (ganho) {
+          pendentes[id] = ganho === 'longo' || pendentes[id] === 'longo' ? 'longo' : 'curto';
+        }
+      }
+      const encerrada = comAcontecimento(
+        {
+          tipo: 'noite',
+          lugar: noite.lugar,
+          nomeDoLugar: noite.nomeDoLugar,
+          turnos: turnos.map((t) => ({ turno: t.turno, linhas: t.linhas })),
+        },
+        {
+          posicao: estado.posicao,
+          relogio: fimDoDescansoLongo(estado.relogio, viagem),
+          viajadoHoje: 0,
+          descansosPendentes: pendentes,
+        },
+      );
+      return ok({ ...encerrada, noite: null });
+    }
+
+    case 'CancelarNoite':
+      return ok(estado.noite ? { ...estado, noite: null } : estado);
+
+    case 'BloquearNoite':
+      return ok(acao.bloqueado === estado.noitesBloqueadas ? estado : { ...estado, noitesBloqueadas: acao.bloqueado });
 
     case 'CarregarGrupo':
       return ok(acao.estado);

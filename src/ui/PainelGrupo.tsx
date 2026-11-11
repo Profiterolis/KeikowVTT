@@ -21,11 +21,16 @@ import { ehMestre, VISIVEL_A_TODOS } from '../core/visibilidade';
 import { corDoMembro } from '../render/camadaGrupo';
 import { useRegras } from './contextoRegras';
 import { SecaoEleicao } from './SecaoEleicao';
+import { SecaoNoite } from './SecaoNoite';
+import type { LojaCompendio } from '../core/compendio';
+import type { LojaNotificacoes } from '../core/notificacoes';
 
 interface PainelGrupoProps {
   readonly lojaGrupo: LojaGrupo;
   readonly lojaFichas: LojaFichas;
   readonly lojaRolagens: LojaRolagens;
+  readonly lojaCompendio: LojaCompendio;
+  readonly lojaNotificacoes: LojaNotificacoes;
   readonly contexto: ContextoDoGrupo;
   readonly participantes: readonly Participante[];
   /** Quem está agindo agora: o mestre, o jogador que controla o líder ou outro jogador. */
@@ -40,7 +45,18 @@ const corCss = (id: string) => `#${corDoMembro(id).toString(16).padStart(6, '0')
  * O mestre escolhe os membros, dá visão extra e trava o movimento; quem controla o líder
  * muda o ritmo, passa a liderança e rola pelo grupo; os demais só leem.
  */
-export function PainelGrupo({ lojaGrupo, lojaFichas, lojaRolagens, contexto, participantes, autorId, aoFechar }: PainelGrupoProps) {
+export function PainelGrupo({
+  lojaGrupo,
+  lojaFichas,
+  lojaRolagens,
+  lojaCompendio,
+  lojaNotificacoes,
+  contexto,
+  participantes,
+  autorId,
+  aoFechar,
+}: PainelGrupoProps) {
+  const compendio = useSyncExternalStore(lojaCompendio.assinar, lojaCompendio.obterEstado);
   const grupo = useSyncExternalStore(lojaGrupo.assinar, lojaGrupo.obterEstado);
   const { fichas } = useSyncExternalStore(lojaFichas.assinar, lojaFichas.obterEstado);
   const regras = useRegras();
@@ -264,6 +280,18 @@ export function PainelGrupo({ lojaGrupo, lojaFichas, lojaRolagens, contexto, par
         )}
       </section>
 
+      <SecaoNoite
+        grupo={grupoVistoPor(grupo, autorId, (id) => fichas[id]?.donoId ?? null)}
+        lojaGrupo={lojaGrupo}
+        lojaFichas={lojaFichas}
+        lojaRolagens={lojaRolagens}
+        lojaNotificacoes={lojaNotificacoes}
+        compendio={compendio}
+        contexto={contexto}
+        fichas={fichas}
+        autorId={autorId}
+      />
+
       <section className="painel-grupo-secao">
         <h3>Descanso</h3>
         {conduz ? (
@@ -308,6 +336,21 @@ export function PainelGrupo({ lojaGrupo, lojaFichas, lojaRolagens, contexto, par
                 Descanso longo
               </button>
             </div>
+            <div className="painel-grupo-linha">
+              <button
+                type="button"
+                className="painel-noite-comecar"
+                disabled={membros.length === 0 || !!grupo.noite || (grupo.noitesBloqueadas && !mestre)}
+                title={
+                  grupo.noitesBloqueadas
+                    ? 'O mestre bloqueou as ações noturnas.'
+                    : `A noite em ${regras.noite.turnos} turnos: cada um escolhe o que fazer (descansar, vigiar, furtar, estudar…); no fim, o grupo acorda pela manhã.`
+                }
+                onClick={() => lojaGrupo.despachar({ tipo: 'ComecarNoite', lugar: podeAbrigo ? lugar : 'acampamento', nomeDoLugar })}
+              >
+                🌙 Passar a noite
+              </button>
+            </div>
             {!mestre && !numPovoado && <p>Abrigo (quarto, casa, convite) só num povoado, ou quando o mestre oferecer.</p>}
           </>
         ) : (
@@ -333,6 +376,15 @@ export function PainelGrupo({ lojaGrupo, lojaFichas, lojaRolagens, contexto, par
             onClick={() => lojaGrupo.despachar({ tipo: 'TravarMovimento', travado: !grupo.movimentoTravado })}
           >
             {grupo.movimentoTravado ? '⛔ Movimento do líder travado' : '🚶 Líder pode mover o grupo'}
+          </button>
+          <button
+            type="button"
+            className="trava-mapa"
+            aria-pressed={grupo.noitesBloqueadas}
+            title="Um acontecimento impede o grupo de passar a noite: ninguém começa a noite nem escolhe ações noturnas (o mestre continua podendo)."
+            onClick={() => lojaGrupo.despachar({ tipo: 'BloquearNoite', bloqueado: !grupo.noitesBloqueadas })}
+          >
+            {grupo.noitesBloqueadas ? '🚫 Ações noturnas bloqueadas' : '🌙 Ações noturnas liberadas'}
           </button>
         </section>
       )}

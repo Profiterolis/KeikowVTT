@@ -21,6 +21,7 @@ import { CampoFormula, CampoLinhas, CampoNumero, CampoTexto } from './camposForm
 import { comSinal, ExplicacaoValor, type Explicando } from './ExplicacaoValor';
 import { numeroNaTela } from './numeros';
 import type { Manifesto } from '../core/manifesto';
+import { SecaoNoiteRegras } from './SecaoNoiteRegras';
 import { SecaoViagemRegras } from './SecaoViagemRegras';
 
 interface TelaRegrasProps {
@@ -256,6 +257,8 @@ export function TelaRegras({ lojaRegras, lojaFichas, lojaCompendio, agindoComoId
           <SecaoCriacao regras={regras} editar={editar} mestre={mestre} />
 
           <SecaoViagemRegras regras={regras} editar={editar} mestre={mestre} manifesto={manifesto} />
+
+          <SecaoNoiteRegras regras={regras} editar={editar} mestre={mestre} />
 
           <section className="ficha-secao">
             <h3>Atributos</h3>

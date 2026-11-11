@@ -47,7 +47,7 @@ Ideias aleatórias para o KeikowVTT:
 - Aba separada na ficha para veículos e montarias: um cavalo ou uma carruagem não fazem sentido dentro da mochila (nem no peso carregado).
 - Transformações que mudam a viagem: um druida em forma animal viajando mais rápido (ou voando e vendo mais longe). Depende de efeitos temporários, que o app ainda não tem; hoje o mestre usa a visão extra do grupo.
 - Equipamento inicial por kits no assistente de criação: em vez de procurar qualquer item do compêndio, o jogador escolhe entre kits montados pelo mestre (liga com a ideia dos "Kits de itens"). Perícias, antecedentes ou classes podem dar equipamentos extras. (Feito na Fase 4.6.)
-- Sistema de notificações na tela: avisos que aparecem para cada participante, como "a eleição terminou: Lyra lidera" para todos, ou "Thorin tentou te furtar" só para quem percebeu o furto (ações noturnas). Cada aviso diz quem pode vê-lo, como o resto do app; no online, chegam na hora para cada jogador.
+- Sistema de notificações na tela: avisos que aparecem para cada participante, como "a eleição terminou: Lyra lidera" para todos, ou "Thorin tentou te furtar" só para quem percebeu o furto (ações noturnas). Cada aviso diz quem pode vê-lo, como o resto do app; no online, chegam na hora para cada jogador. (Feito na Fase 5.5, junto com a noite no acampamento: ações noturnas, furto, estudo e vigia.)
 
 ## Deixado para depois nos planos já feitos
 

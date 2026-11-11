@@ -158,6 +158,17 @@ export function linhaDoDiario(entrada: EntradaDaViagem, nomes: NomesDoDiario): L
       };
     case 'anotou':
       return { ...base, categoria: 'anotacoes', icone: '📝', hora: horaDoDia(inicio), texto: a.texto, detalhe: '' };
+    case 'noite': {
+      const lugar = a.lugar === 'abrigo' ? 'no abrigo' : 'no acampamento';
+      return {
+        ...base,
+        categoria: 'descansos',
+        icone: '🌙',
+        hora: intervalo(inicio, fim),
+        texto: `Noite ${lugar}${a.nomeDoLugar ? ` "${a.nomeDoLugar}"` : ''}`,
+        detalhe: [formatarDuracao(fim - inicio), ...a.turnos.map((t) => `Turno ${t.turno}: ${t.linhas.join('; ') || 'nada'}`)].join(' · '),
+      };
+    }
   }
 }
 
@@ -180,7 +191,7 @@ export function diarioPorDias(
     if (a.tipo === 'passo') {
       atual.minutos += a.minutos;
       atual.hexes += 1;
-    } else if (a.tipo === 'descansou') {
+    } else if (a.tipo === 'descansou' || a.tipo === 'noite') {
       atual.descansos += 1;
     }
     const linha = linhaDoDiario(entrada, nomes);

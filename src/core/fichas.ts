@@ -72,6 +72,22 @@ export interface Ficha {
   readonly usosGastos: Readonly<Record<string, number>>;
   /** Espaços de magia já gastos, do 1º ao 9º nível. Voltam no descanso longo. */
   readonly espacosGastos: readonly number[];
+  /** Estudos em andamento, feitos à noite: um idioma ou uma magia de um livro ou pergaminho. */
+  readonly estudos: readonly EstudoNaFicha[];
+  /** Idiomas aprendidos estudando (os da espécie ficam na espécie). */
+  readonly idiomas: readonly string[];
+}
+
+/** Um estudo em andamento. O mestre decide quando ele termina. */
+export interface EstudoNaFicha {
+  readonly id: string;
+  readonly tipo: 'idioma' | 'magia';
+  /** O nome do idioma, ou o nome da magia. */
+  readonly assunto: string;
+  /** A magia estudada (id no compêndio), ou `null` num idioma. */
+  readonly magiaId: string | null;
+  /** Quantos turnos da noite já foram estudados. */
+  readonly turnos: number;
 }
 
 export const ESPACOS_ZERADOS: readonly number[] = [0, 0, 0, 0, 0, 0, 0, 0, 0];
@@ -186,6 +202,8 @@ export function criarFicha(tipo: Exclude<TipoFicha, 'monstro'>, id: string, dono
     secoes: SECOES_PADRAO,
     usosGastos: {},
     espacosGastos: ESPACOS_ZERADOS,
+    estudos: [],
+    idiomas: [],
   };
 }
 

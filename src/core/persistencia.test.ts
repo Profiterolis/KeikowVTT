@@ -99,6 +99,14 @@ describe('o grupo no arquivo (versão 4)', () => {
     descansosPendentes: { f1: 'longo' },
     eleicao: { pedidaPor: 'j-ana', votos: { 'j-ana': 'f2' }, empatados: null },
     ultimaEleicao: { vencedorId: 'f1', contagem: { f1: 2, f2: 1 }, desempatePeloMestre: false },
+    noite: {
+      lugar: 'abrigo',
+      nomeDoLugar: 'Estalagem',
+      turno: 2,
+      escolhas: { f1: { acaoId: 'furtar', alvoId: 'f2' }, f2: { acaoId: 'estudar', magiaId: 'm', fontePilhaId: 'p' } },
+      turnos: [{ turno: 1, linhas: ['f1 descansou'], descansaram: ['f1'] }],
+    },
+    noitesBloqueadas: true,
     historico: [
       {
         id: 1,
@@ -131,6 +139,13 @@ describe('o grupo no arquivo (versão 4)', () => {
       },
       { id: 4, autorId: 'mestre', acontecimento: { tipo: 'avancou', ateAManha: true }, antes: { posicao: { q: 1, r: 0 }, relogio: 2000, viajadoHoje: 90 }, relogioDepois: 2000 },
       { id: 5, autorId: 'mestre', acontecimento: { tipo: 'acertouRelogio' }, antes: { posicao: { q: 1, r: 0 }, relogio: 2000, viajadoHoje: 90 }, relogioDepois: 2000 },
+      {
+        id: 7,
+        autorId: 'mestre',
+        acontecimento: { tipo: 'noite', lugar: 'acampamento', nomeDoLugar: '', turnos: [{ turno: 1, linhas: ['Lyra vigiou'] }] },
+        antes: { posicao: { q: 1, r: 0 }, relogio: 2000, viajadoHoje: 90, descansosPendentes: {} },
+        relogioDepois: 2400,
+      },
       { id: 6, autorId: 'mestre', acontecimento: { tipo: 'anotou', texto: 'Emboscada' }, antes: { posicao: { q: 1, r: 0 }, relogio: 2000, viajadoHoje: 90 }, relogioDepois: 2000 },
     ],
   };
@@ -151,13 +166,15 @@ describe('o grupo no arquivo (versão 4)', () => {
   });
 
   it('um grupo gravado antes da visão extra ganha uma vazia', () => {
-    const { visaoExtra: _v, movimentoTravado: _m, descansosPendentes: _d, eleicao: _e, ultimaEleicao: _u, ...antigo } = grupoCompleto;
+    const { visaoExtra: _v, movimentoTravado: _m, descansosPendentes: _d, eleicao: _e, ultimaEleicao: _u, noite: _n, noitesBloqueadas: _b, ...antigo } = grupoCompleto;
     const resultado = desserializarMapa(arquivo({ versao: 4, aparenciaOculta: APARENCIA_PADRAO, grupo: antigo, hexes: [] }));
     expect(resultado.ok && resultado.grupo.visaoExtra).toEqual({});
     expect(resultado.ok && resultado.grupo.movimentoTravado).toBe(false);
     expect(resultado.ok && resultado.grupo.descansosPendentes).toEqual({});
     expect(resultado.ok && resultado.grupo.eleicao).toBeNull();
     expect(resultado.ok && resultado.grupo.ultimaEleicao).toBeNull();
+    expect(resultado.ok && resultado.grupo.noite).toBeNull();
+    expect(resultado.ok && resultado.grupo.noitesBloqueadas).toBe(false);
   });
 
   it('um "acampou" de antes dos descansos vira descanso longo no acampamento', () => {

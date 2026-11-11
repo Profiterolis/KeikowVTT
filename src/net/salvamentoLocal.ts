@@ -1,3 +1,9 @@
+import {
+  desserializarNotificacoes,
+  serializarNotificacoes,
+  type EstadoNotificacoes,
+  type LojaNotificacoes,
+} from '../core/notificacoes';
 import type { LojaCampanha } from '../core/campanha';
 import type { LojaRegras } from '../core/regrasDaCampanha';
 import type { LojaGrupo } from '../core/grupo';
@@ -348,6 +354,35 @@ export function manterCampanhaLocal(
         regras: lojaRegras?.obterEstado(),
       }),
     [lojaCampanha.assinar, lojaRegistro.assinar, ...(lojaRegras ? [lojaRegras.assinar] : [])],
+    aoFalhar,
+    { principal, rapido },
+  );
+}
+
+const DOCUMENTO_NOTIFICACOES = {
+  chave: 'keikow.notificacoes',
+  chaveEmergencia: 'keikow.notificacoes.emergencia',
+  desserializar: desserializarNotificacoes,
+};
+
+/** Lê as notificações, ou `null` se ainda não houver nenhuma. */
+export function lerNotificacoesLocal(
+  principal: ArmazenamentoLocal,
+  rapido: ArmazenamentoRapido,
+): Promise<ResultadoDe<{ readonly estado: EstadoNotificacoes }> | null> {
+  return lerDocumento(DOCUMENTO_NOTIFICACOES, { principal, rapido });
+}
+
+export function manterNotificacoesLocal(
+  lojaNotificacoes: LojaNotificacoes,
+  aoFalhar: () => void,
+  principal: ArmazenamentoLocal,
+  rapido: ArmazenamentoRapido,
+): () => void {
+  return manterDocumento(
+    DOCUMENTO_NOTIFICACOES,
+    () => serializarNotificacoes(lojaNotificacoes.obterEstado()),
+    [lojaNotificacoes.assinar],
     aoFalhar,
     { principal, rapido },
   );

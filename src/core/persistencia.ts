@@ -3,7 +3,10 @@ import {
   GRUPO_INICIAL,
   type AcontecimentoDaViagem,
   type Eleicao,
+  type EscolhaNoturna,
+  type NoiteNoGrupo,
   type ResultadoDaEleicao,
+  type TurnoDaNoite,
   type TipoDeDescanso,
   type EntradaDaViagem,
   type EstadoGrupo,
@@ -174,6 +177,61 @@ function lerConta(dado: unknown, onde: string): ParteDoTempo[] | undefined {
   return (dado as ParteDoTempo[]).map(({ texto, valor, tipo }) => ({ texto, valor, tipo }));
 }
 
+/** Os turnos de uma noite no diário: o número e o resumo de cada um. */
+function lerTurnosDoDiario(dado: unknown, onde: string): { turno: number; linhas: string[] }[] {
+  exigir(Array.isArray(dado), `${onde}: os turnos da noite são inválidos.`);
+  return dado.map((t) => {
+    exigir(
+      ehObjeto(t) && Number.isInteger(t.turno) && Array.isArray(t.linhas) && t.linhas.every((l) => typeof l === 'string'),
+      `${onde}: um turno da noite é inválido.`,
+    );
+    return { turno: t.turno as number, linhas: t.linhas as string[] };
+  });
+}
+
+/** Os turnos de uma noite em andamento: também quem descansou em cada um. */
+function lerTurnosDaNoite(dado: unknown, onde: string): TurnoDaNoite[] {
+  const turnos = lerTurnosDoDiario(dado, onde);
+  return turnos.map((t, i) => {
+    const descansaram = (dado as Record<string, unknown>[])[i].descansaram;
+    exigir(Array.isArray(descansaram) && descansaram.every((d) => typeof d === 'string'), `${onde}: quem descansou num turno é inválido.`);
+    return { ...t, descansaram: descansaram as string[] };
+  });
+}
+
+/** A noite em andamento; grupos de antes da Fase 5.5 não a têm. */
+function lerNoiteDoGrupo(dado: unknown): NoiteNoGrupo | null {
+  if (dado === undefined || dado === null) {
+    return null;
+  }
+  const onde = 'A noite do grupo';
+  exigir(ehObjeto(dado), `${onde} é inválida.`);
+  exigir(dado.lugar === 'acampamento' || dado.lugar === 'abrigo', `${onde}: o lugar é inválido.`);
+  exigir(typeof dado.nomeDoLugar === 'string' && Number.isInteger(dado.turno), `${onde} é inválida.`);
+  exigir(ehObjeto(dado.escolhas), `${onde}: as escolhas são inválidas.`);
+  const campos = ['alvoId', 'pericia', 'texto', 'magiaId', 'fontePilhaId'] as const;
+  const escolhas = Object.fromEntries(
+    Object.entries(dado.escolhas).map(([fichaId, e]) => {
+      exigir(ehObjeto(e) && typeof e.acaoId === 'string', `${onde}: uma escolha é inválida.`);
+      const escolha: Record<string, string> = { acaoId: e.acaoId };
+      for (const campo of campos) {
+        if (e[campo] !== undefined) {
+          exigir(typeof e[campo] === 'string', `${onde}: uma escolha é inválida.`);
+          escolha[campo] = e[campo] as string;
+        }
+      }
+      return [fichaId, escolha as unknown as EscolhaNoturna];
+    }),
+  );
+  return {
+    lugar: dado.lugar,
+    nomeDoLugar: dado.nomeDoLugar,
+    turno: dado.turno as number,
+    escolhas,
+    turnos: lerTurnosDaNoite(dado.turnos, onde),
+  };
+}
+
 function lerAcontecimento(dado: unknown, onde: string): AcontecimentoDaViagem {
   exigir(ehObjeto(dado), `${onde} está sem o acontecimento.`);
   switch (dado.tipo) {
@@ -205,6 +263,10 @@ function lerAcontecimento(dado: unknown, onde: string): AcontecimentoDaViagem {
     case 'anotou':
       exigir(typeof dado.texto === 'string', `${onde}: a anotação é inválida.`);
       return { tipo: 'anotou', texto: dado.texto };
+    case 'noite':
+      exigir(dado.lugar === 'acampamento' || dado.lugar === 'abrigo', `${onde}: o lugar da noite é inválido.`);
+      exigir(typeof dado.nomeDoLugar === 'string', `${onde}: o nome do lugar é inválido.`);
+      return { tipo: 'noite', lugar: dado.lugar, nomeDoLugar: dado.nomeDoLugar, turnos: lerTurnosDoDiario(dado.turnos, onde) };
     case 'avancou':
       exigir(typeof dado.ateAManha === 'boolean', `${onde}: o avanço do tempo é inválido.`);
       return { tipo: 'avancou', ateAManha: dado.ateAManha };
@@ -308,6 +370,11 @@ function lerGrupo(dado: unknown): EstadoGrupo {
     })(),
     eleicao: lerEleicao(dado.eleicao),
     ultimaEleicao: lerResultadoDaEleicao(dado.ultimaEleicao),
+    noite: lerNoiteDoGrupo(dado.noite),
+    noitesBloqueadas: (() => {
+      exigir(dado.noitesBloqueadas === undefined || typeof dado.noitesBloqueadas === 'boolean', 'O bloqueio da noite é inválido.');
+      return dado.noitesBloqueadas === true;
+    })(),
   };
 }
 
