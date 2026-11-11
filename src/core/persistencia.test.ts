@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { APARENCIA_PADRAO, type AparenciaOculta } from './aparencia';
-import { GRUPO_SEM_POSICAO } from './grupo';
+import { GRUPO_SEM_POSICAO, type EstadoGrupo } from './grupo';
 import { aplicarAcao, criarMapaVazio, type EstadoMapa } from './mapa';
 import type { Manifesto } from './manifesto';
 import { assetsDesconhecidos, desserializarMapa, serializarMapa } from './persistencia';
@@ -76,13 +76,81 @@ describe('salvar e carregar', () => {
       const aparencia: AparenciaOculta = { fundo, bordasSuaves: true };
       let mapa = aplicarAcao(mapaExemplo(), { tipo: 'RevelarHex', coord: B });
       mapa = aplicarAcao(mapa, { tipo: 'DefinirAparenciaOculta', aparencia });
-      const grupo = { posicao: { q: -3, r: 4 } };
+      const grupo = { ...GRUPO_SEM_POSICAO, posicao: { q: -3, r: 4 } };
       expect(desserializarMapa(serializarMapa(mapa, grupo))).toEqual({
         ok: true,
         estado: mapa,
         grupo,
       });
     }
+  });
+});
+
+describe('o grupo no arquivo (versão 4)', () => {
+  const grupoCompleto: EstadoGrupo = {
+    posicao: { q: 1, r: 0 },
+    membros: ['f1', 'f2'],
+    liderId: 'f1',
+    ritmo: 'rapido',
+    relogio: 2000,
+    viajadoHoje: 90,
+    historico: [
+      {
+        id: 1,
+        autorId: 'mestre',
+        acontecimento: { tipo: 'posicionou', para: { q: 0, r: 0 } },
+        antes: { posicao: null, relogio: 1910, viajadoHoje: 0 },
+        relogioDepois: 1910,
+      },
+      {
+        id: 2,
+        autorId: 'j1',
+        acontecimento: { tipo: 'passo', de: { q: 0, r: 0 }, para: { q: 1, r: 0 }, minutos: 90, ritmo: 'rapido', tags: ['campo'] },
+        antes: { posicao: { q: 0, r: 0 }, relogio: 1910, viajadoHoje: 0 },
+        relogioDepois: 2000,
+      },
+      { id: 3, autorId: 'mestre', acontecimento: { tipo: 'acampou' }, antes: { posicao: { q: 1, r: 0 }, relogio: 2000, viajadoHoje: 90 }, relogioDepois: 2000 },
+      { id: 4, autorId: 'mestre', acontecimento: { tipo: 'avancou', ateAManha: true }, antes: { posicao: { q: 1, r: 0 }, relogio: 2000, viajadoHoje: 90 }, relogioDepois: 2000 },
+      { id: 5, autorId: 'mestre', acontecimento: { tipo: 'acertouRelogio' }, antes: { posicao: { q: 1, r: 0 }, relogio: 2000, viajadoHoje: 90 }, relogioDepois: 2000 },
+    ],
+  };
+
+  it('guarda membros, líder, ritmo, relógio e o diário, e volta igual', () => {
+    expect(desserializarMapa(serializarMapa(criarMapaVazio(), grupoCompleto))).toEqual({
+      ok: true,
+      estado: criarMapaVazio(),
+      grupo: grupoCompleto,
+    });
+  });
+
+  it('um mapa da versão 3 mantém a posição do grupo e ganha o resto padrão', () => {
+    const resultado = desserializarMapa(
+      arquivo({ versao: 3, aparenciaOculta: APARENCIA_PADRAO, posicaoGrupo: { q: 2, r: 2 }, hexes: [hexValido] }),
+    );
+    expect(resultado.ok && resultado.grupo).toEqual({ ...GRUPO_SEM_POSICAO, posicao: { q: 2, r: 2 } });
+    expect(resultado.ok && resultado.estado.hexes['0,0']).toBeTruthy();
+  });
+
+  const comGrupo = (grupo: unknown) => arquivo({ versao: 4, aparenciaOculta: APARENCIA_PADRAO, grupo, hexes: [] });
+
+  it.each<[string, unknown, string]>([
+    ['ausente', undefined, 'não tem o grupo'],
+    ['com membros repetidos', { ...grupoCompleto, membros: ['f1', 'f1'] }, 'repetidos'],
+    ['com relógio negativo', { ...grupoCompleto, relogio: -5 }, 'relógio'],
+    ['com líder numérico', { ...grupoCompleto, liderId: 3 }, 'líder'],
+    ['sem diário', { ...grupoCompleto, historico: undefined }, 'diário'],
+    [
+      'com acontecimento desconhecido',
+      { ...grupoCompleto, historico: [{ ...grupoCompleto.historico[0], acontecimento: { tipo: 'voou' } }] },
+      'desconhecido',
+    ],
+    [
+      'com um passo sem destino',
+      { ...grupoCompleto, historico: [{ ...grupoCompleto.historico[1], acontecimento: { ...grupoCompleto.historico[1].acontecimento, para: null } }] },
+      'destino',
+    ],
+  ])('recusa um grupo %s', (_nome, grupo, trecho) => {
+    expect(erroDe(comGrupo(grupo))).toContain(trecho);
   });
 });
 
@@ -160,7 +228,7 @@ describe('mapas no formato antigo (versão 1)', () => {
     if (!resultado.ok) {
       throw new Error(resultado.erro);
     }
-    expect(JSON.parse(serializarMapa(resultado.estado, resultado.grupo)).versao).toBe(3);
+    expect(JSON.parse(serializarMapa(resultado.estado, resultado.grupo)).versao).toBe(4);
   });
 });
 

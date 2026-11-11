@@ -129,15 +129,23 @@ async function iniciarEditor(): Promise<EditorCarregado> {
     (salvaCampanha && !salvaCampanha.ok && salvaCampanha.erro) ||
     (salvoCompendio && !salvoCompendio.ok && salvoCompendio.erro) ||
     (salvasFichas && !salvasFichas.ok && salvasFichas.erro);
+  const loja = criarLojaMapa(mapa?.estado, opcoesRegistro);
+  const lojaFichas = criarLojaFichas(salvasFichas?.ok ? salvasFichas.estado : undefined, opcoesRegistro, () => ({
+    jogadoresCriam: lojaRegras.obterEstado().criacao.jogadoresCriam,
+  }));
+  // O grupo consulta o mapa (terreno de cada passo), as regras de viagem e quem controla cada ficha.
+  const lojaGrupo = criarLojaGrupo(mapa?.grupo, opcoesRegistro, {
+    obterMapa: loja.obterEstado,
+    obterViagem: () => lojaRegras.obterEstado().viagem,
+    obterDonoDaFicha: (fichaId) => lojaFichas.obterEstado().fichas[fichaId]?.donoId ?? null,
+  });
   return {
-    loja: criarLojaMapa(mapa?.estado, opcoesRegistro),
-    lojaGrupo: criarLojaGrupo(mapa?.grupo, opcoesRegistro),
+    loja,
+    lojaGrupo,
     lojaCampanha: criarLojaCampanha(campanha?.campanha, opcoesRegistro),
     lojaRegistro,
     lojaCompendio: criarLojaCompendio(compendio?.estado, opcoesRegistro),
-    lojaFichas: criarLojaFichas(salvasFichas?.ok ? salvasFichas.estado : undefined, opcoesRegistro, () => ({
-      jogadoresCriam: lojaRegras.obterEstado().criacao.jogadoresCriam,
-    })),
+    lojaFichas,
     // Um registro de rolagens ilegível não impede de abrir: começa vazio.
     lojaRolagens: criarLojaRolagens(salvasRolagens?.ok ? salvasRolagens.rolagens : []),
     lojaRegras,

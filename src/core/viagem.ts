@@ -4,7 +4,7 @@
  */
 import { vizinhosHex, type CoordHex } from './hex';
 import { hexEm, type EstadoMapa } from './mapa';
-import { ehObjeto, exigir } from './persistencia';
+import { ehObjeto, exigir } from './leitura';
 
 export interface TagDeTerreno {
   /** Nome interno, como `montanha`. */
@@ -33,6 +33,10 @@ export interface RegrasDeViagem {
   readonly kmPorHex: number;
   /** Horas de viagem num dia; passar disso é marcha forçada. */
   readonly horasPorDia: number;
+  /** Hora em que o grupo parte depois de acampar, como 8 (08:00). */
+  readonly horaDaPartida: number;
+  /** Horas mínimas de um acampamento: o descanso longo do 5e dura 8 h. */
+  readonly horasDeDescanso: number;
   readonly ritmos: readonly RitmoDeViagem[];
   readonly tags: readonly TagDeTerreno[];
   /**
@@ -52,6 +56,8 @@ export const RITMO_PADRAO = 'normal';
 export const REGRAS_DE_VIAGEM_PADRAO: RegrasDeViagem = {
   kmPorHex: 9,
   horasPorDia: 8,
+  horaDaPartida: 8,
+  horasDeDescanso: 8,
   ritmos: [
     { id: 'lento', nome: 'Lento', kmPorHora: 3, nota: 'O grupo pode andar com furtividade.' },
     { id: 'normal', nome: 'Normal', kmPorHora: 4.5, nota: '' },
@@ -177,6 +183,12 @@ export function problemasNaViagem(viagem: RegrasDeViagem): { onde: string; erro:
   if (!positivo(viagem.horasPorDia) || viagem.horasPorDia > 24) {
     problemas.push({ onde, erro: 'As horas de viagem por dia precisam ser de mais de 0 até 24.' });
   }
+  if (!Number.isFinite(viagem.horaDaPartida) || viagem.horaDaPartida < 0 || viagem.horaDaPartida >= 24) {
+    problemas.push({ onde, erro: 'A hora da partida precisa ser de 0 a 23.' });
+  }
+  if (!Number.isFinite(viagem.horasDeDescanso) || viagem.horasDeDescanso < 0 || viagem.horasDeDescanso > 24) {
+    problemas.push({ onde, erro: 'As horas de descanso precisam ser de 0 a 24.' });
+  }
   if (viagem.ritmos.length === 0) {
     problemas.push({ onde, erro: 'A viagem precisa de ao menos um ritmo.' });
   }
@@ -244,6 +256,9 @@ export function lerViagem(valor: unknown, padrao: RegrasDeViagem): RegrasDeViage
   return {
     kmPorHex: numero(valor, 'kmPorHex', onde),
     horasPorDia: numero(valor, 'horasPorDia', onde),
+    // Acrescentadas depois do primeiro formato do bloco: faltando, valem as padrão.
+    horaDaPartida: valor.horaDaPartida === undefined ? padrao.horaDaPartida : numero(valor, 'horaDaPartida', onde),
+    horasDeDescanso: valor.horasDeDescanso === undefined ? padrao.horasDeDescanso : numero(valor, 'horasDeDescanso', onde),
     ritmos: valor.ritmos.map((r, i) => {
       const local = `O ritmo nº ${i + 1}`;
       exigir(ehObjeto(r), `${local} não é válido.`);

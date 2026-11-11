@@ -106,6 +106,8 @@ describe('conferência e leitura', () => {
   it.each<[string, Partial<RegrasDeViagem>, string]>([
     ['hex de tamanho zero', { kmPorHex: 0 }, 'tamanho do hex'],
     ['dia de 30 horas', { horasPorDia: 30 }, 'até 24'],
+    ['partida às 24 h', { horaDaPartida: 24 }, 'hora da partida'],
+    ['descanso negativo', { horasDeDescanso: -1 }, 'horas de descanso'],
     ['sem ritmos', { ritmos: [] }, 'ao menos um ritmo'],
     ['ritmo parado', { ritmos: [{ id: 'x', nome: 'X', kmPorHora: 0, nota: '' }] }, 'velocidade'],
     ['tag repetida', { tags: [...VIAGEM.tags, VIAGEM.tags[0]] }, 'duas tags'],
@@ -113,6 +115,11 @@ describe('conferência e leitura', () => {
     ['tile com tag que não existe', { tagsPorTile: { hexPlains00: ['lamaçal'] } }, 'não existe'],
   ])('aponta problemas: %s', (_nome, mudanca, trecho) => {
     expect(problemasNaViagem({ ...VIAGEM, ...mudanca }).map((p) => p.erro).join(' ')).toContain(trecho);
+  });
+
+  it('um bloco gravado sem a hora da partida e o descanso ganha os padrões', () => {
+    const { horaDaPartida: _p, horasDeDescanso: _d, ...antigo } = VIAGEM;
+    expect(lerViagem(JSON.parse(JSON.stringify(antigo)), VIAGEM)).toEqual(VIAGEM);
   });
 
   it('recusa um bloco de viagem malformado', () => {

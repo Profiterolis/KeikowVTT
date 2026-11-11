@@ -1,12 +1,20 @@
 import { APARENCIA_PADRAO, type AparenciaOculta, type FundoOculto } from './aparencia';
-import { GRUPO_SEM_POSICAO, type EstadoGrupo } from './grupo';
+import {
+  GRUPO_INICIAL,
+  type AcontecimentoDaViagem,
+  type EntradaDaViagem,
+  type EstadoGrupo,
+  type MarcoDoGrupo,
+} from './grupo';
+import type { CoordHex } from './hex';
+import { ehObjeto, ErroDeFormato, exigir } from './leitura';
 import { chaveHex, type ChaveHex } from './hex';
 import type { Manifesto } from './manifesto';
 import { INFORMACAO_VAZIA, type Decoracao, type EstadoMapa, type Hex, type Nota } from './mapa';
 import { paraJogadores, SO_MESTRE, VISIVEL_A_TODOS, type Visibilidade } from './visibilidade';
 
 /** Aumente ao mudar o formato do arquivo, para poder converter mapas antigos. */
-const VERSAO_ARQUIVO = 3;
+const VERSAO_ARQUIVO = 4;
 
 interface ConteudoArquivo {
   readonly estado: EstadoMapa;
@@ -20,17 +28,7 @@ export type ResultadoDe<T> =
 
 export type ResultadoLeitura = ResultadoDe<ConteudoArquivo>;
 
-export class ErroDeFormato extends Error {}
-
-export function ehObjeto(valor: unknown): valor is Record<string, unknown> {
-  return typeof valor === 'object' && valor !== null && !Array.isArray(valor);
-}
-
-export function exigir(condicao: boolean, mensagem: string): asserts condicao {
-  if (!condicao) {
-    throw new ErroDeFormato(mensagem);
-  }
-}
+export { ehObjeto, ErroDeFormato, exigir };
 
 function lerDecoracao(dado: unknown, onde: string): Decoracao {
   exigir(ehObjeto(dado), `${onde} não é uma decoração válida.`);
@@ -109,15 +107,95 @@ function lerAparencia(dado: unknown): AparenciaOculta {
   return { fundo: lerFundoOculto(dado.fundo), bordasSuaves: dado.bordasSuaves };
 }
 
-function lerGrupo(dado: unknown): EstadoGrupo {
-  if (dado === null) {
-    return GRUPO_SEM_POSICAO;
+function lerCoord(dado: unknown, onde: string): CoordHex {
+  exigir(ehObjeto(dado) && Number.isInteger(dado.q) && Number.isInteger(dado.r), `${onde} é inválida.`);
+  return { q: dado.q as number, r: dado.r as number };
+}
+
+function lerCoordOuNada(dado: unknown, onde: string): CoordHex | null {
+  return dado === null ? null : lerCoord(dado, onde);
+}
+
+/** Até a versão 3, o arquivo só guardava a posição do grupo. */
+function lerPosicaoAntiga(dado: unknown): EstadoGrupo {
+  return { ...GRUPO_INICIAL, posicao: lerCoordOuNada(dado, 'A posição do grupo') };
+}
+
+function minutos(dado: unknown, onde: string): number {
+  exigir(Number.isInteger(dado) && (dado as number) >= 0, `${onde} é inválido.`);
+  return dado as number;
+}
+
+function lerMarco(dado: unknown, onde: string): MarcoDoGrupo {
+  exigir(ehObjeto(dado), `${onde} está sem o momento anterior.`);
+  return {
+    posicao: lerCoordOuNada(dado.posicao, `${onde}: a posição anterior`),
+    relogio: minutos(dado.relogio, `${onde}: o relógio anterior`),
+    viajadoHoje: minutos(dado.viajadoHoje, `${onde}: o tempo viajado anterior`),
+  };
+}
+
+function lerAcontecimento(dado: unknown, onde: string): AcontecimentoDaViagem {
+  exigir(ehObjeto(dado), `${onde} está sem o acontecimento.`);
+  switch (dado.tipo) {
+    case 'passo':
+      exigir(typeof dado.ritmo === 'string', `${onde}: o ritmo é inválido.`);
+      exigir(Array.isArray(dado.tags) && dado.tags.every((t) => typeof t === 'string'), `${onde}: as tags são inválidas.`);
+      return {
+        tipo: 'passo',
+        de: lerCoord(dado.de, `${onde}: a origem`),
+        para: lerCoord(dado.para, `${onde}: o destino`),
+        minutos: minutos(dado.minutos, `${onde}: o tempo do passo`),
+        ritmo: dado.ritmo,
+        tags: dado.tags as string[],
+      };
+    case 'posicionou':
+      return { tipo: 'posicionou', para: lerCoordOuNada(dado.para, `${onde}: a posição`) };
+    case 'acampou':
+    case 'acertouRelogio':
+      return { tipo: dado.tipo };
+    case 'avancou':
+      exigir(typeof dado.ateAManha === 'boolean', `${onde}: o avanço do tempo é inválido.`);
+      return { tipo: 'avancou', ateAManha: dado.ateAManha };
+    default:
+      throw new ErroDeFormato(`${onde} tem um acontecimento desconhecido.`);
   }
-  exigir(
-    ehObjeto(dado) && Number.isInteger(dado.q) && Number.isInteger(dado.r),
-    'A posição do grupo é inválida.',
-  );
-  return { posicao: { q: dado.q as number, r: dado.r as number } };
+}
+
+function lerEntradaDaViagem(dado: unknown, posicao: number): EntradaDaViagem {
+  const onde = `A linha nº ${posicao + 1} do diário de viagem`;
+  exigir(ehObjeto(dado), `${onde} não é válida.`);
+  exigir(Number.isInteger(dado.id), `${onde} está sem número.`);
+  exigir(typeof dado.autorId === 'string' && dado.autorId !== '', `${onde} está sem autor.`);
+  return {
+    id: dado.id as number,
+    autorId: dado.autorId,
+    acontecimento: lerAcontecimento(dado.acontecimento, onde),
+    antes: lerMarco(dado.antes, onde),
+    relogioDepois: minutos(dado.relogioDepois, `${onde}: o relógio`),
+  };
+}
+
+function lerGrupo(dado: unknown): EstadoGrupo {
+  exigir(ehObjeto(dado), 'O arquivo não tem o grupo.');
+  const ids = (lista: unknown, oQue: string) => {
+    exigir(Array.isArray(lista) && lista.every((id) => typeof id === 'string' && id !== ''), `O grupo: ${oQue} são inválidos.`);
+    return lista as string[];
+  };
+  const membros = ids(dado.membros, 'os membros');
+  exigir(new Set(membros).size === membros.length, 'O grupo tem membros repetidos.');
+  exigir(dado.liderId === null || typeof dado.liderId === 'string', 'O líder do grupo é inválido.');
+  exigir(typeof dado.ritmo === 'string' && dado.ritmo !== '', 'O ritmo do grupo é inválido.');
+  exigir(Array.isArray(dado.historico), 'O grupo está sem o diário de viagem.');
+  return {
+    posicao: lerCoordOuNada(dado.posicao, 'A posição do grupo'),
+    membros,
+    liderId: dado.liderId,
+    ritmo: dado.ritmo,
+    relogio: minutos(dado.relogio, 'O relógio do grupo'),
+    viajadoHoje: minutos(dado.viajadoHoje, 'O tempo viajado hoje'),
+    historico: dado.historico.map(lerEntradaDaViagem),
+  };
 }
 
 /** A versão 1 não tinha nome, descrição nem notas; as versões 1 e 2 não tinham revelação. */
@@ -137,17 +215,19 @@ function lerArquivo(texto: string): ConteudoArquivo {
   }
   exigir(ehObjeto(dados) && 'versao' in dados, 'O arquivo não é um mapa do KeikowVTT.');
   exigir(
-    dados.versao === 1 || dados.versao === 2 || dados.versao === VERSAO_ARQUIVO,
+    dados.versao === 1 || dados.versao === 2 || dados.versao === 3 || dados.versao === VERSAO_ARQUIVO,
     `Este mapa usa a versão ${String(dados.versao)} do formato, que não é suportada.`,
   );
   exigir(Array.isArray(dados.hexes), 'O arquivo não tem a lista de hexes.');
   const versao = dados.versao;
-  const ehAtual = versao === VERSAO_ARQUIVO;
-  const listaDeHexes: unknown[] = ehAtual
+  // A versão 3 só mudou o grupo: os hexes e a aparência já estão no formato atual.
+  const hexesAtuais = versao === 3 || versao === VERSAO_ARQUIVO;
+  const listaDeHexes: unknown[] = hexesAtuais
     ? dados.hexes
     : dados.hexes.map((hex: unknown) => converterHexAntigo(hex, versao));
-  const aparenciaOculta = ehAtual ? lerAparencia(dados.aparenciaOculta) : APARENCIA_PADRAO;
-  const grupo = ehAtual ? lerGrupo(dados.posicaoGrupo) : GRUPO_SEM_POSICAO;
+  const aparenciaOculta = hexesAtuais ? lerAparencia(dados.aparenciaOculta) : APARENCIA_PADRAO;
+  const grupo =
+    versao === VERSAO_ARQUIVO ? lerGrupo(dados.grupo) : versao === 3 ? lerPosicaoAntiga(dados.posicaoGrupo) : GRUPO_INICIAL;
 
   const hexes: Record<ChaveHex, Hex> = {};
   const idsDeDecoracao = new Set<string>();
@@ -187,7 +267,7 @@ export function mapaParaObjeto(estado: EstadoMapa, grupo: EstadoGrupo) {
   return {
     versao: VERSAO_ARQUIVO,
     aparenciaOculta: estado.aparenciaOculta,
-    posicaoGrupo: grupo.posicao,
+    grupo,
     hexes,
   };
 }

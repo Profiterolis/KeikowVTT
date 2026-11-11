@@ -115,7 +115,7 @@ export function BarraArquivo({
       lojaFichas.despachar({ tipo: 'CarregarFichas', estado: lidasFichas.estado });
     }
     loja.despachar({ tipo: 'CarregarMapa', estado: resultado.estado });
-    lojaGrupo.despachar({ tipo: 'PosicionarGrupo', coord: resultado.grupo.posicao });
+    lojaGrupo.despachar({ tipo: 'CarregarGrupo', estado: resultado.grupo });
     aoMensagem({
       tipo: 'info',
       texto: lidaCampanha.conteudo
