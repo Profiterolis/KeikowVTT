@@ -289,8 +289,13 @@ function EditorEntrada({
             editar({ ...entrada, dados: { ...entrada.dados, ...parcial } } as Entrada, `dados-${campo}`)
           }
         />
-        <EditorEfeitos entrada={entrada} mudar={(efeitos, campo) => editar({ ...entrada, efeitos } as Entrada, campo)} />
-        <EditorAcoes entrada={entrada} mudar={(acoes, campo) => editar({ ...entrada, acoes } as Entrada, campo)} />
+        {/* Um kit nunca chega à ficha como kit: efeitos e ações ficam nos itens dele. */}
+        {entrada.tipo !== 'kit' && (
+          <>
+            <EditorEfeitos entrada={entrada} mudar={(efeitos, campo) => editar({ ...entrada, efeitos } as Entrada, campo)} />
+            <EditorAcoes entrada={entrada} mudar={(acoes, campo) => editar({ ...entrada, acoes } as Entrada, campo)} />
+          </>
+        )}
       </fieldset>
     </div>
   );

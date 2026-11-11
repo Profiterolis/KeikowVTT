@@ -32,6 +32,7 @@ import {
 } from '../core/grupo';
 import { ExplicacaoDoPasso } from './ExplicacaoDoPasso';
 import { BarraDoGrupo } from './BarraDoGrupo';
+import { problemaNosItensDaCriacao } from '../core/kits';
 import { PainelDiario } from './PainelDiario';
 import { PainelGrupo } from './PainelGrupo';
 import { membroNaViagem } from '../core/calculoDaFicha';
@@ -151,8 +152,11 @@ async function iniciarEditor(): Promise<EditorCarregado> {
     (salvoCompendio && !salvoCompendio.ok && salvoCompendio.erro) ||
     (salvasFichas && !salvasFichas.ok && salvasFichas.erro);
   const loja = criarLojaMapa(mapa?.estado, opcoesRegistro);
+  const lojaCompendio = criarLojaCompendio(compendio?.estado, opcoesRegistro);
   const lojaFichas = criarLojaFichas(salvasFichas?.ok ? salvasFichas.estado : undefined, opcoesRegistro, () => ({
     jogadoresCriam: lojaRegras.obterEstado().criacao.jogadoresCriam,
+    // Criando o personagem, o jogador só fica com os itens dos kits oferecidos.
+    itensDaCriacao: (ficha) => problemaNosItensDaCriacao(ficha, lojaCompendio.obterEstado(), lojaRegras.obterEstado()),
   }));
   // O grupo consulta o mapa (terreno de cada passo), as regras de viagem e quem controla cada ficha.
   const contextoGrupo: ContextoDoGrupo = {
@@ -171,7 +175,7 @@ async function iniciarEditor(): Promise<EditorCarregado> {
     contextoGrupo,
     lojaCampanha: criarLojaCampanha(campanha?.campanha, opcoesRegistro),
     lojaRegistro,
-    lojaCompendio: criarLojaCompendio(compendio?.estado, opcoesRegistro),
+    lojaCompendio,
     lojaFichas,
     // Um registro de rolagens ilegível não impede de abrir: começa vazio.
     lojaRolagens: criarLojaRolagens(salvasRolagens?.ok ? salvasRolagens.rolagens : []),

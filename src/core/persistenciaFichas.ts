@@ -22,7 +22,7 @@ import { METODOS_ATRIBUTOS, type MetodoAtributos } from './regras';
 import { atualizarEntradas, comoResultado, lerEntradas, lerJson, VERSAO_COMPENDIO } from './persistenciaCompendio';
 
 /** Aumente ao mudar o formato das fichas, e acrescente a conversão em `converterFicha`. */
-const VERSAO_FICHAS = 6;
+const VERSAO_FICHAS = 7;
 
 /** Passa uma ficha gravada numa versão antiga para a atual, ainda sem conferir. */
 function converterFicha(ficha: unknown, versao: number): unknown {
@@ -58,6 +58,14 @@ function converterFicha(ficha: unknown, versao: number): unknown {
     // Versão 6: o rascunho da criação (método dos atributos e valores rolados).
     atual = { ...atual, rascunho: null };
   }
+  if (versao < 7 && ehObjeto(atual.rascunho)) {
+    // Versão 7: o rascunho guarda o kit escolhido e os itens livres; os itens que a ficha já tinha
+    // passam a ser os livres, para o assistente não perdê-los.
+    const itens = Array.isArray(atual.itens)
+      ? atual.itens.filter(ehObjeto).map((p) => ({ entradaId: p.entradaId, quantidade: p.quantidade }))
+      : [];
+    atual = { ...atual, rascunho: { ...atual.rascunho, kitId: null, itens } };
+  }
   return atual;
 }
 
@@ -90,7 +98,20 @@ function lerRascunho(valor: unknown, onde: string): RascunhoDaCriacao | null {
       (Array.isArray(rolados) && rolados.length === ATRIBUTOS.length && rolados.every((n) => Number.isInteger(n) && n >= 1 && n <= 30)),
     `${onde}: os valores rolados não são válidos.`,
   );
-  return { metodo: valor.metodo as MetodoAtributos, rolados: rolados as number[] | null };
+  exigir(valor.kitId === null || (typeof valor.kitId === 'string' && valor.kitId !== ''), `${onde}: o kit escolhido não é válido.`);
+  exigir(
+    Array.isArray(valor.itens) &&
+      valor.itens.every(
+        (i) => ehObjeto(i) && typeof i.entradaId === 'string' && i.entradaId !== '' && Number.isInteger(i.quantidade) && (i.quantidade as number) >= 1,
+      ),
+    `${onde}: os itens escolhidos na criação não são válidos.`,
+  );
+  return {
+    metodo: valor.metodo as MetodoAtributos,
+    rolados: rolados as number[] | null,
+    kitId: valor.kitId as string | null,
+    itens: (valor.itens as { entradaId: string; quantidade: number }[]).map(({ entradaId, quantidade }) => ({ entradaId, quantidade })),
+  };
 }
 
 function inteiro(valor: unknown, onde: string, minimo: number, maximo = Infinity): number {

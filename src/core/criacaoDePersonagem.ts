@@ -20,6 +20,7 @@ import {
   nivelTotal,
   type Ficha,
 } from './fichas';
+import { entregarKit, kitsDaClasse, kitsExtras, periciasDaCriacao } from './kits';
 import { lerFormula, rolarFormula } from './formulas';
 import { encontrarPericia, type MetodoAtributos, type Regras, type RegrasDeCriacao } from './regras';
 
@@ -148,7 +149,9 @@ export interface EscolhasDeCriacao {
   readonly pericias: readonly string[];
   /** Ids das magias do compêndio. */
   readonly magias: readonly string[];
-  /** Itens do compêndio, como o equipamento inicial. */
+  /** O kit de equipamento escolhido entre os que a classe oferece. */
+  readonly kitId: string | null;
+  /** Itens do compêndio escolhidos fora dos kits: só o mestre usa. */
   readonly itens: readonly { readonly entradaId: string; readonly quantidade: number }[];
 }
 
@@ -165,6 +168,7 @@ export function escolhasIniciais(criacao: RegrasDeCriacao): EscolhasDeCriacao {
     rolados: null,
     pericias: [],
     magias: [],
+    kitId: null,
     itens: [],
   };
 }
@@ -206,7 +210,13 @@ export function periciasParaEscolher(
  * Monta a ficha com as escolhas, sobre uma ficha já existente (a da criação em andamento).
  * O que não foi escolhido fica de fora; a ficha continua "em criação" até ser concluída.
  */
-export function fichaDaCriacao(base: Ficha, escolhas: EscolhasDeCriacao, compendio: EstadoCompendio, criarId: () => string): Ficha {
+export function fichaDaCriacao(
+  base: Ficha,
+  escolhas: EscolhasDeCriacao,
+  compendio: EstadoCompendio,
+  criarId: () => string,
+  regras: Regras,
+): Ficha {
   // Começa do zero a cada mudança, para trocar de classe ou espécie não deixar sobras.
   let ficha: Ficha = {
     ...base,
@@ -221,8 +231,10 @@ export function fichaDaCriacao(base: Ficha, escolhas: EscolhasDeCriacao, compend
     pvAtuais: null,
     itens: [],
     extras: [],
+    // As moedas da criação vêm só dos kits; recomeçam a cada mudança, como o resto.
+    moedas: { pc: 0, pp: 0, pe: 0, po: 0, pl: 0 },
     secoes: base.secoes.map((s) => ({ ...s, cartas: [] })),
-    rascunho: { metodo: escolhas.metodo, rolados: escolhas.rolados },
+    rascunho: { metodo: escolhas.metodo, rolados: escolhas.rolados, kitId: escolhas.kitId, itens: escolhas.itens },
   };
   if (doTipo(compendio, escolhas.especieId, 'especie')) {
     ficha = comOrigem(ficha, compendio, 'especieId', escolhas.especieId);
@@ -239,6 +251,12 @@ export function fichaDaCriacao(base: Ficha, escolhas: EscolhasDeCriacao, compend
   for (const item of escolhas.itens) {
     ficha = comItem(ficha, compendio, item.entradaId, criarId(), item.quantidade);
   }
+  // O kit só vale se a classe o oferece: trocar de classe não deixa o kit da anterior.
+  const kit = kitsDaClasse(compendio, escolhas.classeId).find((k) => k.id === escolhas.kitId);
+  const extras = kitsExtras(compendio, ficha.antecedenteId, periciasDaCriacao(ficha, regras), regras).map((e) => e.kit);
+  for (const k of kit ? [kit, ...extras] : extras) {
+    ficha = entregarKit(ficha, k, compendio, criarId).ficha;
+  }
   return ficha;
 }
 
@@ -249,7 +267,7 @@ export function novaFichaEmCriacao(id: string, donoId: string, criacao: RegrasDe
     ...criarFicha('personagem', id, donoId),
     emCriacao: true,
     atributos: escolhas.atributos,
-    rascunho: { metodo: escolhas.metodo, rolados: null },
+    rascunho: { metodo: escolhas.metodo, rolados: null, kitId: null, itens: [] },
   };
 }
 
@@ -268,7 +286,9 @@ export function escolhasDaFicha(ficha: Ficha, regras: Regras): EscolhasDeCriacao
       .filter(([id, valor]) => valor === 1 && regras.pericias.some((p) => p.id === id))
       .map(([id]) => id),
     magias: ficha.extras.filter((id) => ficha.entradas[id]?.tipo === 'magia'),
-    itens: ficha.itens.map((p) => ({ entradaId: p.entradaId, quantidade: p.quantidade })),
+    kitId: ficha.rascunho?.kitId ?? null,
+    // Os itens dos kits são remontados a cada mudança; aqui ficam só os escolhidos à parte.
+    itens: ficha.rascunho?.itens ?? ficha.itens.map((p) => ({ entradaId: p.entradaId, quantidade: p.quantidade })),
   };
 }
 
@@ -300,6 +320,11 @@ export function pendenciasDaCriacao(escolhas: EscolhasDeCriacao, compendio: Esta
     pendencias.push('Há perícias escolhidas que esta classe não oferece.');
   } else if (new Set(validas).size !== quantidade) {
     pendencias.push(`Escolha ${quantidade} perícia${quantidade === 1 ? '' : 's'} da classe.`);
+  }
+  // Com kits preparados para a classe, um deles precisa ser escolhido; sem kits, não trava.
+  const kits = kitsDaClasse(compendio, classe ? escolhas.classeId : null);
+  if (kits.length > 0 && !kits.some((k) => k.id === escolhas.kitId)) {
+    pendencias.push('Escolha um kit de equipamento.');
   }
   return pendencias;
 }

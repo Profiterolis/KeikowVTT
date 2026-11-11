@@ -7,7 +7,7 @@ import { comoResultado, lerEntradas, lerJson } from './persistenciaCompendio';
  * Aumente ao mudar o formato do pacote. As entradas dentro dele seguem o formato
  * atual do compêndio: quando o compêndio mudar de versão, o pacote precisa ser gerado de novo.
  */
-export const VERSAO_PACOTE = 5;
+export const VERSAO_PACOTE = 6;
 export const FORMATO_PACOTE = 'keikow-pacote';
 
 /** Um aviso de autoria ou licença que precisa aparecer para quem usa o conteúdo. */

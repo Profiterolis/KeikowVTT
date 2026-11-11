@@ -81,6 +81,10 @@ export interface RascunhoDaCriacao {
   readonly metodo: MetodoAtributos;
   /** Os seis valores rolados, ou `null` se ainda não rolou. */
   readonly rolados: readonly number[] | null;
+  /** O kit de equipamento escolhido entre os da classe, ou `null`. */
+  readonly kitId: string | null;
+  /** Itens escolhidos fora dos kits (só o mestre escolhe). */
+  readonly itens: readonly { readonly entradaId: string; readonly quantidade: number }[];
 }
 
 export type Moeda = (typeof MOEDAS)[number];

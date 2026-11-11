@@ -21,6 +21,8 @@ import {
   referenciasQuebradas,
   type Fontes,
   type Registro,
+  converterKit,
+  ehPacoteDeEquipamento,
 } from './converterSrd';
 
 // Registros reais da base do 5e-bits, encurtados.
@@ -178,6 +180,32 @@ describe('itens', () => {
 
   it('recusa valores desconhecidos em vez de inventar', () => {
     expect(() => converterEquipamento({ ...longsword, cost: { quantity: 1, unit: 'xx' } })).toThrow('desconhecido');
+  });
+});
+
+describe('pacotes de equipamento viram kits', () => {
+  const pacote = {
+    index: 'explorers-pack',
+    name: "Explorer's Pack",
+    contents: [
+      { item: { index: 'backpack', name: 'Backpack' }, quantity: 1 },
+      { item: { index: 'torch', name: 'Torch' }, quantity: 10 },
+    ],
+  };
+
+  it('o kit tem os mesmos itens, sem classe e só para o mestre', () => {
+    const kit = converterKit(pacote);
+    expect(kit).toMatchObject({ id: 'srd-5.1/kit/explorers-pack', tipo: 'kit', nome: "Explorer's Pack", visibilidade: { tipo: 'mestre' } });
+    expect(kit.dados.itens).toEqual([
+      { entradaId: 'srd-5.1/equipamento/backpack', quantidade: 1 },
+      { entradaId: 'srd-5.1/equipamento/torch', quantidade: 10 },
+    ]);
+    expect(kit.dados.classes).toEqual([]);
+  });
+
+  it('só equipamentos com conteúdo são pacotes', () => {
+    expect(ehPacoteDeEquipamento(pacote)).toBe(true);
+    expect(ehPacoteDeEquipamento({ index: 'backpack', contents: [] })).toBe(false);
   });
 });
 

@@ -2987,3 +2987,34 @@ fieldset.formulario {
   color: #8f9199;
   font-size: 11px;
 }
+
+/* Kits de equipamento: copiar o conteúdo de outro kit. */
+.kit-copiar {
+  display: flex;
+  gap: 6px;
+}
+
+/* Conteúdo de um kit nas cartas do assistente. */
+.assistente-kit {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  color: #b9bcc6;
+  font-size: 12px;
+}
+
+/* Janela "Dar kit": as fichas que recebem. */
+.janela-kit-fichas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 10px 0;
+  padding: 8px 10px;
+  border: 1px solid #333846;
+  border-radius: 4px;
+}
+
+.janela-kit-fichas label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}

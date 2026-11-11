@@ -36,7 +36,7 @@ function exemplo(): EstadoFichas {
     edicaoLiberada: true,
     emCriacao: true,
     niveisLiberados: 2,
-    rascunho: { metodo: 'rolagem', rolados: [15, 14, 12, 11, 10, 9] },
+    rascunho: { metodo: 'rolagem', rolados: [15, 14, 12, 11, 10, 9], kitId: null, itens: [] },
   };
   const comInventario = comSecao(
     comNota(
@@ -117,7 +117,17 @@ describe('salvar e ler fichas', () => {
     expect(lido.ok && lido.estado.fichas.h1.rascunho).toBeNull();
   });
 
+  it('rascunhos da versão 6 ganham o kit vazio, e os itens da ficha viram os itens livres', () => {
+    const objeto = fichasParaObjeto(exemplo());
+    const ficha = objeto.fichas[0] as unknown as Record<string, unknown>;
+    const antiga = { ...ficha, rascunho: { metodo: 'padrao', rolados: null } };
+    const lido = desserializarFichas(comoTexto({ ...objeto, versao: 6, fichas: [antiga] }));
+    const itens = (ficha.itens as { entradaId: string; quantidade: number }[]).map(({ entradaId, quantidade }) => ({ entradaId, quantidade }));
+    expect(lido.ok && lido.estado.fichas.h1.rascunho).toEqual({ metodo: 'padrao', rolados: null, kitId: null, itens });
+  });
+
   it.each([
+    ['rascunho sem os itens', (f: Record<string, unknown>) => ({ ...f, rascunho: { metodo: 'padrao', rolados: null, kitId: null } }), 'itens escolhidos'],
     ['rascunho com método desconhecido', (f: Record<string, unknown>) => ({ ...f, rascunho: { metodo: 'sorte', rolados: null } }), 'método'],
     ['rascunho com cinco valores rolados', (f: Record<string, unknown>) => ({ ...f, rascunho: { metodo: 'rolagem', rolados: [1, 2, 3, 4, 5] } }), 'rolados'],
     ['níveis liberados negativos', (f: Record<string, unknown>) => ({ ...f, niveisLiberados: -1 }), 'níveis liberados'],

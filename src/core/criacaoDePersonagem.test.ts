@@ -149,7 +149,7 @@ describe('criação', () => {
   });
 
   it('monta a ficha: espécie, classe, antecedente, atributos, perícias e itens, e a ficha calcula o resto', () => {
-    const ficha = fichaDaCriacao(criarFicha('personagem', 'f', 'ana'), escolhasDoGuerreiro(), compendio, criarId);
+    const ficha = fichaDaCriacao(criarFicha('personagem', 'f', 'ana'), escolhasDoGuerreiro(), compendio, criarId, R);
     expect(ficha).toMatchObject({ nome: 'Brunhilde', especieId: 'anao', antecedenteId: 'acolito', classes: [{ entradaId: 'guerreiro', nivel: 1 }] });
     expect(ficha.proficiencias).toEqual({ atletismo: 1, historia: 1 });
     expect(ficha.itens).toMatchObject([{ entradaId: 'corda', quantidade: 2 }]);
@@ -162,8 +162,8 @@ describe('criação', () => {
 
   it('trocar de classe não deixa sobras da anterior', () => {
     const base = criarFicha('personagem', 'f', 'ana');
-    const comGuerreiro = fichaDaCriacao(base, escolhasDoGuerreiro(), compendio, criarId);
-    const comMago = fichaDaCriacao(comGuerreiro, escolhasDoGuerreiro({ classeId: 'mago', pericias: [] }), compendio, criarId);
+    const comGuerreiro = fichaDaCriacao(base, escolhasDoGuerreiro(), compendio, criarId, R);
+    const comMago = fichaDaCriacao(comGuerreiro, escolhasDoGuerreiro({ classeId: 'mago', pericias: [] }), compendio, criarId, R);
     expect(Object.keys(comMago.entradas)).not.toContain('guerreiro');
     expect(Object.keys(comMago.entradas)).not.toContain('folego');
   });
@@ -179,7 +179,7 @@ describe('criação', () => {
       rolados: [15, 14, 13, 12, 10, 8],
       magias: ['escudo'],
     });
-    const ficha = fichaDaCriacao(nova, escolhas, compendio, criarId);
+    const ficha = fichaDaCriacao(nova, escolhas, compendio, criarId, R);
     expect(escolhasDaFicha(ficha, R)).toEqual(escolhas);
     expect(concluirCriacao(ficha)).toMatchObject({ emCriacao: false, rascunho: null });
   });
@@ -200,7 +200,7 @@ describe('criação', () => {
 
 describe('magias', () => {
   it('lista as magias da classe até o nível dos espaços, e dá o guia da tabela', () => {
-    const ficha = fichaDaCriacao(criarFicha('personagem', 'f'), escolhasDoGuerreiro({ classeId: 'mago', pericias: [] }), compendio, criarId);
+    const ficha = fichaDaCriacao(criarFicha('personagem', 'f'), escolhasDoGuerreiro({ classeId: 'mago', pericias: [] }), compendio, criarId, R);
     const calculo = calcularFicha(ficha, R);
     expect(magiasDaClasse(ficha, 'mago', compendio, calculo).map((m) => m.id)).toEqual(['luz', 'escudo']);
     expect(guiaDeMagias(ficha, 'mago', calculo)).toEqual({ truques: 3, magiasConhecidas: null });
@@ -210,7 +210,7 @@ describe('magias', () => {
 
 describe('subida de nível', () => {
   const pronta = (): Ficha => ({
-    ...fichaDaCriacao(criarFicha('personagem', 'f', 'ana'), escolhasDoGuerreiro(), compendio, criarId),
+    ...fichaDaCriacao(criarFicha('personagem', 'f', 'ana'), escolhasDoGuerreiro(), compendio, criarId, R),
     niveisLiberados: 1,
   });
 
@@ -285,7 +285,7 @@ describe('permissões da criação e da subida', () => {
 
   it('em criação, o dono muda tudo e conclui; depois não volta, e só apaga enquanto cria', () => {
     const antes = { fichas: { f: nova() } };
-    const montada = fichaDaCriacao(antes.fichas.f, escolhasDoGuerreiro(), compendio, criarId);
+    const montada = fichaDaCriacao(antes.fichas.f, escolhasDoGuerreiro(), compendio, criarId, R);
     expect(conferirFichas(antes, { fichas: { f: montada } }, 'ana')).toEqual({ ok: true });
     const concluida = { ...montada, emCriacao: false };
     expect(conferirFichas({ fichas: { f: montada } }, { fichas: { f: concluida } }, 'ana')).toEqual({ ok: true });
@@ -295,7 +295,7 @@ describe('permissões da criação e da subida', () => {
   });
 
   it('o mestre libera níveis; o dono gasta um numa subida válida, e só nela', () => {
-    const pronta: Ficha = { ...fichaDaCriacao(nova(), escolhasDoGuerreiro(), compendio, criarId), emCriacao: false };
+    const pronta: Ficha = { ...fichaDaCriacao(nova(), escolhasDoGuerreiro(), compendio, criarId, R), emCriacao: false };
     const liberada = { ...pronta, niveisLiberados: 1 };
     expect(conferirFichas({ fichas: { f: pronta } }, { fichas: { f: liberada } }, 'ana')).toMatchObject({ ok: false, motivo: 'Só o mestre libera níveis.' });
     expect(conferirFichas({ fichas: { f: pronta } }, { fichas: { f: liberada } }, 'mestre').ok).toBe(true);

@@ -322,6 +322,38 @@ export function converterEquipamento(registro: Registro): EntradaDe<'item'> {
   };
 }
 
+/** Os pacotes de equipamento do SRD (Explorer's Pack e afins), que também viram kits. */
+export function ehPacoteDeEquipamento(registro: Registro): boolean {
+  return Array.isArray(registro.contents) && registro.contents.length > 0;
+}
+
+/**
+ * Um pacote de equipamento do SRD como kit: os mesmos itens, sem classe, só para o mestre.
+ * O mestre usa como base para montar os kits de cada classe.
+ */
+export function converterKit(registro: Registro): EntradaDe<'kit'> {
+  return {
+    ...base(
+      'kit',
+      id('kit', registro.index),
+      registro.name,
+      'Equipment pack from the SRD, ready to give to a character or to copy into a class kit.',
+      ['Equipment Packs'],
+      true,
+    ),
+    dados: {
+      itens: registro.contents.map((c: Registro) => ({
+        entradaId: id('equipamento', exigirValor(c.item?.index, `conteúdo de ${registro.index}`)),
+        quantidade: exigirValor(c.quantity, `quantidade em ${registro.index}`),
+      })),
+      moedas: { pc: 0, pp: 0, pe: 0, po: 0, pl: 0 },
+      classes: [],
+      extraPorAntecedente: [],
+      extraPorPericia: [],
+    },
+  };
+}
+
 function categoriaDoItemMagico(registro: Registro): DadosItem['categoria'] {
   switch (registro.equipment_category?.index) {
     case 'armor':
@@ -1151,6 +1183,7 @@ export function converterSrd(fontes: Fontes): Pacote {
   };
 
   converter('Equipment', converterEquipamento);
+  converter('Equipment', converterKit, ehPacoteDeEquipamento);
   converter('Magic-Items', converterItemMagico, (r) => !(Array.isArray(r.variants) && r.variants.length > 0));
   converter('Spells', converterMagia);
   const { grupos, idFinal } = agruparCaracteristicas(fontes.Features);
@@ -1270,6 +1303,9 @@ export function referenciasQuebradas(pacote: Pacote): string[] {
         break;
       case 'antecedente':
         conferir(e.id, e.dados.habilidades);
+        break;
+      case 'kit':
+        conferir(e.id, [...e.dados.itens.map((i) => i.entradaId), ...e.dados.classes, ...e.dados.extraPorAntecedente]);
         break;
     }
   }

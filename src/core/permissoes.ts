@@ -80,6 +80,11 @@ const SO_DO_MESTRE: readonly [keyof Ficha, string][] = [
 export interface OpcoesDaConferencia {
   /** Os jogadores podem criar os próprios personagens pelo assistente. */
   readonly jogadoresCriam?: boolean;
+  /**
+   * Confere os itens de um personagem em criação de um jogador (só os dos kits oferecidos).
+   * Precisa do compêndio e das regras, por isso vem de fora. Sem ela, nada é conferido.
+   */
+  readonly itensDaCriacao?: (ficha: Ficha) => string | null;
 }
 
 /**
@@ -186,7 +191,7 @@ export function conferirFichas(
   antes: EstadoFichas,
   depois: EstadoFichas,
   autorId: string,
-  { jogadoresCriam = true }: OpcoesDaConferencia = {},
+  { jogadoresCriam = true, itensDaCriacao }: OpcoesDaConferencia = {},
 ): Permissao {
   if (antes === depois || ehMestre(autorId)) {
     return PERMITIDO;
@@ -236,6 +241,11 @@ export function conferirFichas(
     const motivo = a.donoId === autorId ? problemaNaFichaDoDono(a, d) : problemaAoReceber(a, d);
     if (motivo) {
       return recusar(motivo);
+    }
+    // Criando o personagem, o jogador escolhe o equipamento só pelos kits.
+    const nosItens = a.donoId === autorId && d.emCriacao && !d.edicaoLiberada ? itensDaCriacao?.(d) : null;
+    if (nosItens) {
+      return recusar(nosItens);
     }
   }
   for (const [chave, n] of recebido) {

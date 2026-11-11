@@ -14,6 +14,7 @@ export const TIPOS_ENTRADA = [
   'talento',
   'condicao',
   'monstro',
+  'kit',
 ] as const;
 export type TipoEntrada = (typeof TIPOS_ENTRADA)[number];
 
@@ -255,6 +256,27 @@ export interface DadosMonstro {
   readonly acoesLendarias: readonly BlocoDeTexto[];
 }
 
+/** Um item do kit, pelo id da entrada no compêndio. */
+export interface ItemDoKit {
+  readonly entradaId: string;
+  readonly quantidade: number;
+}
+
+/**
+ * Um kit de equipamento: só uma conveniência do mestre. Quem recebe um kit ganha os itens
+ * separados, como pilhas comuns, e as moedas; o kit em si nunca aparece na ficha.
+ */
+export interface DadosKit {
+  readonly itens: readonly ItemDoKit[];
+  readonly moedas: Readonly<Record<(typeof MOEDAS)[number], number>>;
+  /** Classes (ids do compêndio) que oferecem este kit como equipamento inicial no assistente. */
+  readonly classes: readonly string[];
+  /** Antecedentes (ids do compêndio) que dão este kit a mais na criação, sem escolha. */
+  readonly extraPorAntecedente: readonly string[];
+  /** Perícias (ids das regras) que dão este kit a mais na criação, sem escolha. */
+  readonly extraPorPericia: readonly string[];
+}
+
 export interface DadosPorTipo {
   readonly item: DadosItem;
   readonly magia: DadosMagia;
@@ -265,6 +287,7 @@ export interface DadosPorTipo {
   readonly talento: DadosTalento;
   readonly condicao: DadosCondicao;
   readonly monstro: DadosMonstro;
+  readonly kit: DadosKit;
 }
 
 export interface EntradaDe<T extends TipoEntrada> {
@@ -359,6 +382,13 @@ const DADOS_INICIAIS: { readonly [T in TipoEntrada]: () => DadosPorTipo[T] } = {
     acoesDeCombate: [],
     reacoes: [],
     acoesLendarias: [],
+  }),
+  kit: () => ({
+    itens: [],
+    moedas: { pc: 0, pp: 0, pe: 0, po: 0, pl: 0 },
+    classes: [],
+    extraPorAntecedente: [],
+    extraPorPericia: [],
   }),
 };
 

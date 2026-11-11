@@ -18,6 +18,7 @@ import {
 } from '../core/criacaoDePersonagem';
 import { ATRIBUTOS, type Atributo, type Entrada, type EntradaDe } from '../core/entradas';
 import type { Ficha } from '../core/fichas';
+import { conteudoDoKit, kitsDaClasse, kitsExtras, periciasDaCriacao, textoDasMoedas, type Kit } from '../core/kits';
 import { ehMestre } from '../core/permissoes';
 import type { RolagemFeita } from '../core/acoesDaFicha';
 import type { MetodoAtributos, Regras } from '../core/regras';
@@ -72,7 +73,7 @@ export function AssistenteCriacao({ ficha, compendio, autorId, participantes, ed
     (buscarEntradas(compendio, { tipos: [tipo] }) as EntradaDe<T>[]).filter((e) => podeVer(e.visibilidade, autorId));
 
   const mudar = (parcial: Partial<EscolhasDeCriacao>, campo: string) =>
-    editar(fichaDaCriacao(ficha, { ...escolhas, ...parcial }, compendio, () => crypto.randomUUID()), campo);
+    editar(fichaDaCriacao(ficha, { ...escolhas, ...parcial }, compendio, () => crypto.randomUUID(), regras), campo);
   const unico = (nome: string) => `${nome}-${crypto.randomUUID()}`;
 
   const especie = escolhas.especieId ? (compendio.entradas[escolhas.especieId] as EntradaDe<'especie'> | undefined) : undefined;
@@ -134,7 +135,7 @@ export function AssistenteCriacao({ ficha, compendio, autorId, participantes, ed
         opcoes={visiveis('classe')}
         escolhida={escolhas.classeId}
         // Outra classe tem outras perícias e magias: as escolhas antigas não valem mais.
-        aoEscolher={(id) => mudar({ classeId: id, pericias: [], magias: [] }, unico('classe'))}
+        aoEscolher={(id) => mudar({ classeId: id, pericias: [], magias: [], kitId: null }, unico('classe'))}
         vazio="Não há classes no compêndio. Peça ao mestre para importar o SRD."
         detalhes={(c) => (
           <>
@@ -276,11 +277,15 @@ export function AssistenteCriacao({ ficha, compendio, autorId, participantes, ed
 
     equipamento: () => (
       <PassoEquipamento
+        ficha={ficha}
         classe={classe ?? null}
         compendio={compendio}
         autorId={autorId}
+        kitId={escolhas.kitId}
         itens={escolhas.itens}
-        mudar={(itens) => mudar({ itens }, unico('equipamento'))}
+        escolherKit={(kitId) => mudar({ kitId }, unico('kit'))}
+        mudarItens={(itens) => mudar({ itens }, unico('equipamento'))}
+        irParaClasse={() => setPasso('classe')}
       />
     ),
 
@@ -349,7 +354,7 @@ export function AssistenteCriacao({ ficha, compendio, autorId, participantes, ed
       case 'magias':
         return !!classe && (!classe.dados.atributoConjuracao || escolhas.magias.length > 0);
       case 'equipamento':
-        return escolhas.itens.length > 0;
+        return !!classe && !pendencias.some((p) => /kit/.test(p));
       case 'revisao':
         return pendencias.length === 0;
     }
@@ -624,85 +629,157 @@ function PassoAtributos({
   );
 }
 
-/** O equipamento inicial: o texto da classe como guia e a busca de itens no compêndio. */
+/**
+ * O equipamento inicial: um dos kits que a classe oferece, mais os kits extras do antecedente e
+ * das perícias. Sem classe, um aviso leva até ela. Só o mestre acrescenta itens à parte.
+ */
 function PassoEquipamento({
+  ficha,
   classe,
   compendio,
   autorId,
+  kitId,
   itens,
-  mudar,
+  escolherKit,
+  mudarItens,
+  irParaClasse,
 }: {
+  readonly ficha: Ficha;
   readonly classe: EntradaDe<'classe'> | null;
   readonly compendio: EstadoCompendio;
   readonly autorId: string;
+  readonly kitId: string | null;
   readonly itens: EscolhasDeCriacao['itens'];
-  readonly mudar: (itens: EscolhasDeCriacao['itens']) => void;
+  readonly escolherKit: (kitId: string | null) => void;
+  readonly mudarItens: (itens: EscolhasDeCriacao['itens']) => void;
+  readonly irParaClasse: () => void;
 }) {
+  const regras = useRegras();
   const [busca, setBusca] = useState('');
+  const mestre = ehMestre(autorId);
   const encontrados = useMemo(
     () =>
-      busca.trim().length < 2
+      !mestre || busca.trim().length < 2
         ? []
         : buscarEntradas(compendio, { texto: busca, tipos: ['item'] })
             .filter((e) => podeVer(e.visibilidade, autorId))
             .slice(0, 12),
-    [busca, compendio, autorId],
+    [busca, compendio, autorId, mestre],
   );
-  const guia = classe?.descricao.match(/Starting equipment:[^\n]*/)?.[0];
-  const acrescentar = (id: string) => {
-    const existente = itens.find((i) => i.entradaId === id);
-    mudar(existente ? itens.map((i) => (i === existente ? { ...i, quantidade: i.quantidade + 1 } : i)) : [...itens, { entradaId: id, quantidade: 1 }]);
-  };
-  return (
-    <>
-      {guia ? <p className="painel-texto">{guia}</p> : <p className="tela-dica">Escolha a classe para ver o equipamento inicial dela.</p>}
-      <input
-        type="search"
-        className="assistente-busca"
-        aria-label="Procurar item no compêndio"
-        placeholder="Procurar item no compêndio, como Longsword"
-        value={busca}
-        onChange={(e) => setBusca(e.target.value)}
-      />
-      {encontrados.length > 0 && (
-        <ul className="organizacao-resultados">
-          {encontrados.map((e) => (
-            <li key={e.id}>
-              <button type="button" onClick={() => acrescentar(e.id)}>
-                + {e.nome}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <h4>Levando</h4>
-      {itens.length === 0 && <p className="tela-dica">Nada ainda.</p>}
-      <ul className="assistente-itens">
-        {itens.map((item) => (
-          <li key={item.entradaId}>
-            <span>{compendio.entradas[item.entradaId]?.nome ?? '(item apagado)'}</span>
-            <span className="carta-quantidade">
-              <button
-                type="button"
-                title="Menos um"
-                onClick={() =>
-                  mudar(
-                    item.quantidade <= 1
-                      ? itens.filter((i) => i !== item)
-                      : itens.map((i) => (i === item ? { ...i, quantidade: i.quantidade - 1 } : i)),
-                  )
-                }
-              >
-                −
-              </button>
-              <span>{item.quantidade}</span>
-              <button type="button" title="Mais um" onClick={() => acrescentar(item.entradaId)}>
-                +
-              </button>
-            </span>
+
+  if (!classe) {
+    return (
+      <div className="tela-cabecalho-acoes">
+        <p className="tela-dica">Escolha a classe primeiro: os kits de equipamento dependem dela.</p>
+        <button type="button" onClick={irParaClasse}>
+          Ir para Classe
+        </button>
+      </div>
+    );
+  }
+
+  const kits = kitsDaClasse(compendio, classe.id);
+  const extras = kitsExtras(compendio, ficha.antecedenteId, periciasDaCriacao(ficha, regras), regras);
+  const guia = classe.descricao.match(/Starting equipment:[^\n]*/)?.[0];
+  const conteudo = (kit: Kit) => {
+    const moedas = textoDasMoedas(kit);
+    return (
+      <ul className="assistente-kit">
+        {conteudoDoKit(kit, compendio).map((linha) => (
+          <li key={linha.entradaId} className={linha.existe ? undefined : 'aviso'}>
+            {linha.quantidade} × {linha.nome}
           </li>
         ))}
+        {moedas && <li>{moedas}</li>}
       </ul>
+    );
+  };
+  const acrescentar = (id: string) => {
+    const existente = itens.find((i) => i.entradaId === id);
+    mudarItens(existente ? itens.map((i) => (i === existente ? { ...i, quantidade: i.quantidade + 1 } : i)) : [...itens, { entradaId: id, quantidade: 1 }]);
+  };
+
+  return (
+    <>
+      {kits.length === 0 ? (
+        <p className="tela-dica">O mestre ainda não preparou kits para esta classe. O personagem começa sem equipamento; combine com o mestre.</p>
+      ) : (
+        <>
+          <p className="tela-dica">Escolha um kit. Os itens dele entram na ficha, cada um no seu lugar.</p>
+          <Cartas opcoes={kits} escolhida={kitId} aoEscolher={escolherKit} vazio="" detalhes={conteudo} />
+        </>
+      )}
+      {extras.length > 0 && (
+        <>
+          <h4>Também ganha</h4>
+          {extras.map(({ kit, motivo }) => (
+            <div key={kit.id} className="assistente-carta">
+              <strong>
+                {kit.nome || '(sem nome)'} <small>({motivo})</small>
+              </strong>
+              {conteudo(kit)}
+            </div>
+          ))}
+        </>
+      )}
+      {guia && (
+        <details>
+          <summary>O que o livro sugere para a classe</summary>
+          <p className="painel-texto">{guia}</p>
+        </details>
+      )}
+
+      {mestre && (
+        <>
+          <h4>Itens à parte (só o mestre)</h4>
+          <input
+            type="search"
+            className="assistente-busca"
+            aria-label="Procurar item no compêndio"
+            placeholder="Procurar item no compêndio, como Longsword"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+          />
+          {encontrados.length > 0 && (
+            <ul className="organizacao-resultados">
+              {encontrados.map((e) => (
+                <li key={e.id}>
+                  <button type="button" onClick={() => acrescentar(e.id)}>
+                    + {e.nome}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {itens.length === 0 && <p className="tela-dica">Nada à parte.</p>}
+          <ul className="assistente-itens">
+            {itens.map((item) => (
+              <li key={item.entradaId}>
+                <span>{compendio.entradas[item.entradaId]?.nome ?? '(item apagado)'}</span>
+                <span className="carta-quantidade">
+                  <button
+                    type="button"
+                    title="Menos um"
+                    onClick={() =>
+                      mudarItens(
+                        item.quantidade <= 1
+                          ? itens.filter((i) => i !== item)
+                          : itens.map((i) => (i === item ? { ...i, quantidade: i.quantidade - 1 } : i)),
+                      )
+                    }
+                  >
+                    −
+                  </button>
+                  <span>{item.quantidade}</span>
+                  <button type="button" title="Mais um" onClick={() => acrescentar(item.entradaId)}>
+                    +
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </>
   );
 }

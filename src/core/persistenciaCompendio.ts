@@ -36,7 +36,7 @@ import {
 } from './persistencia';
 
 /** Aumente ao mudar o formato das entradas, e acrescente a conversão em CONVERSOES. */
-export const VERSAO_COMPENDIO = 6;
+export const VERSAO_COMPENDIO = 7;
 
 type Dado = Record<string, unknown>;
 
@@ -378,6 +378,24 @@ const LER_DADOS: LeitorDeDados = {
     reacoes: lista(d, 'reacoes', onde, lerBloco),
     acoesLendarias: lista(d, 'acoesLendarias', onde, lerBloco),
   }),
+  kit: (d, onde) => {
+    const moedas = objeto(d.moedas, `${onde}: as moedas`);
+    return {
+      itens: lista(d, 'itens', onde, (valor, ondeItem) => {
+        const item = objeto(valor, ondeItem);
+        return {
+          entradaId: textoPreenchido(item, 'entradaId', ondeItem),
+          quantidade: numero(item, 'quantidade', ondeItem, { inteiro: true, minimo: 1 }),
+        };
+      }),
+      moedas: Object.fromEntries(
+        MOEDAS.map((m) => [m, numero(moedas, m, `${onde}: as moedas`, { inteiro: true, minimo: 0 })]),
+      ) as Record<(typeof MOEDAS)[number], number>,
+      classes: listaDeTextos(d, 'classes', onde),
+      extraPorAntecedente: listaDeTextos(d, 'extraPorAntecedente', onde),
+      extraPorPericia: listaDeTextos(d, 'extraPorPericia', onde),
+    };
+  },
 };
 
 /**
@@ -457,6 +475,8 @@ const CONVERSOES: Readonly<Record<number, (entradas: unknown) => unknown>> = {
   4: (entradas) => (Array.isArray(entradas) ? entradas.map(entradaParaMetrico) : entradas),
   // Versão 6: as classes ganharam a escolha de perícias e os níveis de aumento de atributo.
   5: (entradas) => completarDados(entradas, 'classe', { escolhaPericias: null, niveisDeAumento: NIVEIS_DE_AUMENTO_PADRAO }),
+  // Versão 7: o tipo "kit" (kits de equipamento). As entradas antigas não mudam.
+  6: (entradas) => entradas,
 };
 
 /** Um número em pés vira metros; um texto, como "Movimento (pés)", troca as medidas imperiais. */

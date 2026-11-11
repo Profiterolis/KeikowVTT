@@ -22,6 +22,7 @@ export const ROTULO_TIPO: Rotulos<TipoEntrada> = {
   talento: 'Talento',
   condicao: 'Condição',
   monstro: 'Monstro',
+  kit: 'Kit',
 };
 
 export const ROTULO_ATRIBUTO: Rotulos<Atributo> = {

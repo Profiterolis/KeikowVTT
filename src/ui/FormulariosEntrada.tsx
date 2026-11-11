@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ATRIBUTOS,
+  MOEDAS,
+  type ItemDoKit,
   NIVEIS_DA_TABELA,
   type BlocoDeTexto,
   type ColunaTabela,
@@ -1004,6 +1006,178 @@ export function EditorAcoes({
   );
 }
 
+/**
+ * O kit: itens do compêndio com quantidades, moedas, as classes que o oferecem no assistente e
+ * os antecedentes e perícias que o dão a mais. O conteúdo de outro kit pode ser copiado para
+ * dentro deste (os itens são copiados; o kit não fica guardado dentro do outro).
+ */
+export function FormularioKit({ dados, mudar, todas }: PropsFormulario<'kit'>) {
+  const regras = useRegras();
+  const [busca, setBusca] = useState('');
+  const [kitParaCopiar, setKitParaCopiar] = useState('');
+  const porId = useMemo(() => new Map(todas.map((e) => [e.id, e])), [todas]);
+  const encontrados = useMemo(() => {
+    const termo = normalizarNome(busca);
+    return termo.length < 2
+      ? []
+      : todas.filter((e) => e.tipo === 'item' && normalizarNome(e.nome).includes(termo)).slice(0, 12);
+  }, [busca, todas]);
+  const outrosKits = todas.filter((e): e is EntradaDe<'kit'> => e.tipo === 'kit' && e.dados !== dados);
+
+  /** Soma itens à lista, juntando quantidades do mesmo item. */
+  const somar = (novos: readonly ItemDoKit[], campo: string) => {
+    const itens = [...dados.itens];
+    for (const novo of novos) {
+      const i = itens.findIndex((x) => x.entradaId === novo.entradaId);
+      if (i >= 0) {
+        itens[i] = { ...itens[i], quantidade: itens[i].quantidade + novo.quantidade };
+      } else {
+        itens.push(novo);
+      }
+    }
+    mudar({ itens }, campo);
+  };
+  const guias = dados.classes
+    .map((id) => porId.get(id))
+    .filter((e): e is EntradaDe<'classe'> => e?.tipo === 'classe')
+    .map((c) => ({ nome: c.nome, texto: c.descricao.match(/Starting equipment:[^\n]*/)?.[0] }))
+    .filter((g) => g.texto);
+
+  return (
+    <>
+      <h3 className="campo-largo">Itens</h3>
+      {dados.itens.length === 0 && <p className="tela-dica campo-largo">Nenhum item ainda. Procure abaixo ou copie de outro kit.</p>}
+      <ul className="assistente-itens campo-largo">
+        {dados.itens.map((item, i) => {
+          const entrada = porId.get(item.entradaId);
+          return (
+            <li key={item.entradaId}>
+              <span>{entrada?.tipo === 'item' ? entrada.nome : '(item apagado do compêndio)'}</span>
+              <span className="carta-quantidade">
+                <button
+                  type="button"
+                  title="Menos um"
+                  onClick={() =>
+                    mudar(
+                      {
+                        itens:
+                          item.quantidade <= 1
+                            ? dados.itens.filter((_, j) => j !== i)
+                            : dados.itens.map((x, j) => (j === i ? { ...x, quantidade: x.quantidade - 1 } : x)),
+                      },
+                      `kit-item-${item.entradaId}`,
+                    )
+                  }
+                >
+                  −
+                </button>
+                <span>{item.quantidade}</span>
+                <button type="button" title="Mais um" onClick={() => somar([{ entradaId: item.entradaId, quantidade: 1 }], `kit-item-${item.entradaId}`)}>
+                  +
+                </button>
+                <button
+                  type="button"
+                  title="Tirar do kit"
+                  onClick={() => mudar({ itens: dados.itens.filter((_, j) => j !== i) }, `kit-tirar-${crypto.randomUUID()}`)}
+                >
+                  ✕
+                </button>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      <label className="campo campo-largo">
+        <span>Acrescentar item do compêndio</span>
+        <input type="search" placeholder="Procurar item, como Rope" value={busca} onChange={(e) => setBusca(e.target.value)} />
+      </label>
+      {encontrados.length > 0 && (
+        <ul className="organizacao-resultados campo-largo">
+          {encontrados.map((e) => (
+            <li key={e.id}>
+              <button type="button" onClick={() => somar([{ entradaId: e.id, quantidade: 1 }], `kit-acrescentar-${crypto.randomUUID()}`)}>
+                + {e.nome}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {outrosKits.length > 0 && (
+        <div className="campo campo-largo">
+          <span>Copiar o conteúdo de outro kit (os itens se somam aos deste)</span>
+          <div className="kit-copiar">
+            <select aria-label="Kit para copiar" value={kitParaCopiar} onChange={(e) => setKitParaCopiar(e.target.value)}>
+              <option value="">Escolha um kit…</option>
+              {outrosKits.map((k) => (
+                <option key={k.id} value={k.id}>
+                  {k.nome || 'Sem nome'}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={kitParaCopiar === ''}
+              onClick={() => {
+                const kit = outrosKits.find((k) => k.id === kitParaCopiar);
+                if (kit) {
+                  // Itens e moedas numa mudança só, para um único passo de desfazer.
+                  const itens = [...dados.itens];
+                  for (const novo of kit.dados.itens) {
+                    const i = itens.findIndex((x) => x.entradaId === novo.entradaId);
+                    itens[i >= 0 ? i : itens.length] = i >= 0 ? { ...itens[i], quantidade: itens[i].quantidade + novo.quantidade } : novo;
+                  }
+                  const moedas = Object.fromEntries(MOEDAS.map((m) => [m, dados.moedas[m] + kit.dados.moedas[m]])) as typeof dados.moedas;
+                  mudar({ itens, moedas }, `kit-copiar-${crypto.randomUUID()}`);
+                }
+                setKitParaCopiar('');
+              }}
+            >
+              Copiar
+            </button>
+          </div>
+        </div>
+      )}
+
+      <h3 className="campo-largo">Moedas</h3>
+      {MOEDAS.map((m) => (
+        <CampoNumero
+          key={m}
+          rotulo={ROTULO_MOEDA[m]}
+          inteiro
+          minimo={0}
+          valor={dados.moedas[m]}
+          aoMudar={(v) => v !== null && mudar({ moedas: { ...dados.moedas, [m]: v } }, `moeda-${m}`)}
+        />
+      ))}
+
+      <h3 className="campo-largo">Na criação de personagem</h3>
+      <CampoReferencias
+        rotulo="Classes que oferecem este kit (o jogador escolhe um dos kits da classe)"
+        selecionadas={dados.classes}
+        disponiveis={referencias(todas, 'classe')}
+        aoMudar={(v) => mudar({ classes: v }, 'classes')}
+      />
+      {guias.map((g) => (
+        <p key={g.nome} className="tela-dica campo-largo">
+          {g.nome}: {g.texto}
+        </p>
+      ))}
+      <CampoReferencias
+        rotulo="Antecedentes que dão este kit a mais"
+        selecionadas={dados.extraPorAntecedente}
+        disponiveis={referencias(todas, 'antecedente')}
+        aoMudar={(v) => mudar({ extraPorAntecedente: v }, 'extraPorAntecedente')}
+      />
+      <CampoReferencias
+        rotulo="Perícias que dão este kit a mais"
+        selecionadas={dados.extraPorPericia}
+        disponiveis={regras.pericias.map((p) => ({ id: p.id, nome: p.nome }))}
+        aoMudar={(v) => mudar({ extraPorPericia: v }, 'extraPorPericia')}
+      />
+    </>
+  );
+}
+
 /** O formulário dos dados próprios de cada tipo de entrada. */
 export function FormularioDados({
   entrada,
@@ -1038,5 +1212,7 @@ export function FormularioDados({
       return <p className="tela-dica campo-largo">Condições não têm dados próprios: o que elas fazem será definido nos efeitos.</p>;
     case 'monstro':
       return <FormularioMonstro {...props(entrada)} />;
+    case 'kit':
+      return <FormularioKit {...props(entrada)} />;
   }
 }

@@ -25,6 +25,8 @@ import {
   podeReceberPresente,
   podeVerFicha,
 } from '../core/permissoes';
+import { entregarKit } from '../core/kits';
+import { JanelaDarKit } from './JanelaDarKit';
 import { MenuDeContexto, type MenuAberto } from './MenuDeContexto';
 import type { Mesa } from './mesa';
 import { PainelRolagens } from './PainelRolagens';
@@ -107,6 +109,7 @@ export function TelaFichas({
   const podeRefazer = useSyncExternalStore(lojaFichas.assinar, lojaFichas.podeRefazer);
   const [selecionadaId, setSelecionadaId] = useState<string | null>(null);
   const [monstroEscolhido, setMonstroEscolhido] = useState('');
+  const [dandoKit, setDandoKit] = useState(false);
 
   const mestre = ehMestre(agindoComoId);
   const regras = useRegras();
@@ -148,6 +151,32 @@ export function TelaFichas({
 
   return (
     <div className="tela-sobreposta" role="dialog" aria-label="Fichas">
+      {dandoKit && mestre && (
+        <JanelaDarKit
+          compendio={compendio}
+          fichas={fichas}
+          aoFechar={() => setDandoKit(false)}
+          aoDar={(kitId, fichaIds) => {
+            const kit = compendio.entradas[kitId];
+            if (kit?.tipo !== 'kit') {
+              return [];
+            }
+            const faltando = new Set<string>();
+            const novas = fichaIds.flatMap((id) => {
+              const ficha = estado.fichas[id];
+              if (!ficha) {
+                return [];
+              }
+              const entregue = entregarKit(ficha, kit, compendio);
+              entregue.faltando.forEach((f) => faltando.add(f));
+              return [entregue.ficha];
+            });
+            // Todas as fichas numa ação só: um único passo de desfazer.
+            lojaFichas.despachar({ tipo: 'EditarFichas', fichas: novas });
+            return [...faltando];
+          }}
+        />
+      )}
       <header className="tela-cabecalho">
         <h1>Fichas</h1>
         <div className="tela-cabecalho-acoes">
@@ -198,6 +227,11 @@ export function TelaFichas({
             </select>
             <button type="button" disabled={!monstroEscolhido} onClick={criarMonstro}>
               + Monstro
+            </button>
+          </div>
+          <div className="compendio-novo">
+            <button type="button" title="Entrega os itens de um kit, separados, a uma ou mais fichas" onClick={() => setDandoKit(true)}>
+              Dar kit…
             </button>
           </div>
           </>

@@ -113,6 +113,20 @@ describe('ler e salvar entradas', () => {
     ['uma arma completa', espadaCompleta],
     ['uma armadura sem limite de Destreza', malhaCompleta],
     ['um monstro com desafio fracionário', goblin],
+    [
+      'um kit completo',
+      {
+        ...criarEntrada('kit', 'kit-x'),
+        nome: 'Kit do explorador',
+        dados: {
+          itens: [{ entradaId: 'corda', quantidade: 2 }],
+          moedas: { pc: 0, pp: 0, pe: 0, po: 15, pl: 0 },
+          classes: ['guerreiro'],
+          extraPorAntecedente: ['acolito'],
+          extraPorPericia: ['medicina'],
+        },
+      } as Entrada,
+    ],
   ])('%s volta idêntica', (_, entrada) => {
     expect(ida(entrada)).toEqual(entrada);
   });
@@ -123,6 +137,17 @@ describe('ler e salvar entradas', () => {
       entradas: [espadaCompleta, malhaCompleta, goblin],
     });
     expect(desserializarCompendio(serializarCompendio(estado))).toEqual({ ok: true, estado });
+  });
+});
+
+describe('kits inválidos', () => {
+  const kit = () => JSON.parse(JSON.stringify(criarEntrada('kit', 'k')));
+  it.each([
+    ['quantidade zero', (k: Record<string, any>) => ({ ...k, dados: { ...k.dados, itens: [{ entradaId: 'corda', quantidade: 0 }] } })],
+    ['item sem id', (k: Record<string, any>) => ({ ...k, dados: { ...k.dados, itens: [{ entradaId: '', quantidade: 1 }] } })],
+    ['moedas negativas', (k: Record<string, any>) => ({ ...k, dados: { ...k.dados, moedas: { ...k.dados.moedas, po: -1 } } })],
+  ])('recusa %s', (_, estragar) => {
+    expect(() => lerEntrada(estragar(kit()), 'O kit')).toThrow();
   });
 });
 
