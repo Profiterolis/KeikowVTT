@@ -9,6 +9,12 @@ import {
   podeConduzir,
   trilhaDoGrupo,
   grupoVistoPor,
+  candidatos,
+  contagemDaEleicao,
+  eleitores,
+  permissaoNoGrupo,
+  votosValidos,
+  VOTO_SECRETO,
   criarLojaGrupo,
   fimDoDescansoLongo,
   formatarRelogio,
@@ -508,5 +514,97 @@ describe('anotações e diário só do mestre', () => {
     const daAna = grupoVistoPor(andou, 'j-ana');
     expect(daAna.historico).toEqual([]);
     expect(daAna.posicao).toEqual(B);
+  });
+});
+
+describe('eleição do líder', () => {
+  /** Ana tem duas fichas (ana e ana2), Bia uma, e o mestre um NPC (guia). */
+  const DONOS_ELEICAO: Record<string, string> = { ana: 'j-ana', ana2: 'j-ana', bia: 'j-bia', guia: 'mestre' };
+  const ctx: ContextoDoGrupo = { ...contexto, obterDonoDaFicha: (id) => DONOS_ELEICAO[id] ?? null };
+  const grupo: EstadoGrupo = { ...GRUPO_INICIAL, posicao: A, membros: ['ana', 'ana2', 'bia', 'guia'], liderId: 'ana' };
+
+  function como(autorId: string, estado: EstadoGrupo, acao: AcaoGrupo): EstadoGrupo {
+    const permissao = permissaoNoGrupo(estado, acao, autorId, ctx);
+    if (!permissao.ok) {
+      throw new Error(permissao.motivo);
+    }
+    const r = aplicarAcaoGrupo(estado, acao, autorId, ctx);
+    if (!r.ok) {
+      throw new Error(r.motivo);
+    }
+    return r.estado;
+  }
+
+  it('vota um jogador por vez, não uma ficha; o mestre não vota; NPCs não são candidatos', () => {
+    expect(eleitores(grupo, ctx)).toEqual(['j-ana', 'j-bia']);
+    expect(candidatos(grupo, ctx)).toEqual(['ana', 'ana2', 'bia']);
+    const aberta = como('j-bia', grupo, { tipo: 'PedirEleicao' });
+    expect(() => como('mestre', aberta, { tipo: 'Votar', fichaId: 'bia' })).toThrow('O mestre não vota');
+    expect(() => como('j-bia', aberta, { tipo: 'Votar', fichaId: 'guia' })).toThrow('personagem de jogador');
+    expect(() => como('j-cid', grupo, { tipo: 'PedirEleicao' })).toThrow('Só quem tem um personagem no grupo');
+  });
+
+  it('com todos os votos, conta sozinha e o mais votado lidera; pode trocar o voto antes', () => {
+    let e = como('j-ana', grupo, { tipo: 'PedirEleicao' });
+    e = como('j-ana', e, { tipo: 'Votar', fichaId: 'ana' });
+    e = como('j-ana', e, { tipo: 'Votar', fichaId: 'bia' });
+    expect(e.eleicao?.votos).toEqual({ 'j-ana': 'bia' });
+    e = como('j-bia', e, { tipo: 'Votar', fichaId: 'bia' });
+    expect(e.eleicao).toBeNull();
+    expect(e.liderId).toBe('bia');
+    expect(e.ultimaEleicao).toEqual({ vencedorId: 'bia', contagem: { bia: 2 }, desempatePeloMestre: false });
+  });
+
+  it('no empate, o mestre escolhe entre os empatados', () => {
+    let e = como('j-ana', grupo, { tipo: 'PedirEleicao' });
+    e = como('j-ana', e, { tipo: 'Votar', fichaId: 'ana' });
+    e = como('j-bia', e, { tipo: 'Votar', fichaId: 'bia' });
+    expect(e.eleicao?.empatados).toEqual(['ana', 'bia']);
+    expect(() => como('j-ana', e, { tipo: 'Votar', fichaId: 'bia' })).toThrow('empatou');
+    expect(() => como('j-ana', e, { tipo: 'DesempatarEleicao', fichaId: 'ana' })).toThrow('Só o mestre');
+    expect(() => como('mestre', e, { tipo: 'DesempatarEleicao', fichaId: 'ana2' })).toThrow('Escolha um dos empatados');
+    e = como('mestre', e, { tipo: 'DesempatarEleicao', fichaId: 'bia' });
+    expect(e.liderId).toBe('bia');
+    expect(e.ultimaEleicao).toEqual({ vencedorId: 'bia', contagem: { ana: 1, bia: 1 }, desempatePeloMestre: true });
+  });
+
+  it('o mestre encerra antes; sem votos, nada muda', () => {
+    const aberta = como('j-ana', grupo, { tipo: 'PedirEleicao' });
+    const semVotos = como('mestre', aberta, { tipo: 'EncerrarEleicao' });
+    expect(semVotos.liderId).toBe('ana');
+    expect(semVotos.ultimaEleicao).toEqual({ vencedorId: null, contagem: {}, desempatePeloMestre: false });
+    const umVoto = como('mestre', como('j-bia', aberta, { tipo: 'Votar', fichaId: 'bia' }), { tipo: 'EncerrarEleicao' });
+    expect(umVoto.liderId).toBe('bia');
+  });
+
+  it('cancelam o mestre e quem pediu; uma eleição por vez; precisa de dois candidatos', () => {
+    const aberta = como('j-ana', grupo, { tipo: 'PedirEleicao' });
+    expect(() => como('j-bia', aberta, { tipo: 'CancelarEleicao' })).toThrow('quem pediu');
+    expect(como('j-ana', aberta, { tipo: 'CancelarEleicao' }).eleicao).toBeNull();
+    expect(como('mestre', aberta, { tipo: 'CancelarEleicao' }).eleicao).toBeNull();
+    expect(() => como('j-bia', aberta, { tipo: 'PedirEleicao' })).toThrow('Já há uma eleição');
+    const sozinha = { ...grupo, membros: ['bia', 'guia'] };
+    expect(() => como('mestre', sozinha, { tipo: 'PedirEleicao' })).toThrow('pelo menos dois');
+  });
+
+  it('quem sai do grupo perde o voto; votos num candidato que saiu deixam de valer', () => {
+    let e = como('j-ana', grupo, { tipo: 'PedirEleicao' });
+    e = como('j-ana', e, { tipo: 'Votar', fichaId: 'ana2' });
+    e = como('mestre', e, { tipo: 'RemoverMembro', fichaId: 'ana2' });
+    expect(votosValidos(e, ctx)).toEqual({});
+    e = como('j-ana', e, { tipo: 'Votar', fichaId: 'ana' });
+    expect(e.eleicao).not.toBeNull();
+    expect(contagemDaEleicao(e, ctx)).toEqual({ ana: 1 });
+  });
+
+  it('cada jogador vê o próprio voto e só que os outros votaram; o mestre vê tudo', () => {
+    let e = como('j-ana', grupo, { tipo: 'PedirEleicao' });
+    e = como('j-ana', e, { tipo: 'Votar', fichaId: 'bia' });
+    expect(grupoVistoPor(e, 'j-ana').eleicao?.votos).toEqual({ 'j-ana': 'bia' });
+    const daBia = grupoVistoPor(e, 'j-bia');
+    expect(daBia.eleicao?.votos).toEqual({ 'j-ana': VOTO_SECRETO });
+    expect(Object.keys(votosValidos(daBia, ctx))).toEqual(['j-ana']);
+    expect(contagemDaEleicao(daBia, ctx)).toEqual({});
+    expect(grupoVistoPor(e, 'mestre').eleicao?.votos).toEqual({ 'j-ana': 'bia' });
   });
 });

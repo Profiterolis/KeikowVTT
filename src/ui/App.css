@@ -2970,3 +2970,20 @@ fieldset.formulario {
   color: #6f727b;
   font-size: 11px;
 }
+
+/* Eleição do líder, no painel do grupo e na barra. */
+.barra-grupo button.barra-grupo-eleicao {
+  border-color: #c39a3c;
+  color: #f0c870;
+}
+
+.painel-eleicao-resultado {
+  color: #b9bcc6;
+  font-size: 12px;
+}
+
+.painel-eleicao-votantes {
+  margin: 8px 0 4px;
+  color: #8f9199;
+  font-size: 11px;
+}

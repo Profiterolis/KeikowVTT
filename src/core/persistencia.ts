@@ -2,6 +2,8 @@ import { APARENCIA_PADRAO, type AparenciaOculta, type FundoOculto } from './apar
 import {
   GRUPO_INICIAL,
   type AcontecimentoDaViagem,
+  type Eleicao,
+  type ResultadoDaEleicao,
   type TipoDeDescanso,
   type EntradaDaViagem,
   type EstadoGrupo,
@@ -214,6 +216,47 @@ function lerVisaoExtra(dado: unknown): Record<string, number> {
   return dado as Record<string, number>;
 }
 
+const ehRegistroDeTexto = (dado: unknown) =>
+  ehObjeto(dado) && Object.values(dado).every((v) => typeof v === 'string' && v !== '');
+
+/** Gravada a partir da eleição do líder; grupos de antes não a têm. */
+function lerEleicao(dado: unknown): Eleicao | null {
+  if (dado === undefined || dado === null) {
+    return null;
+  }
+  exigir(ehObjeto(dado), 'A eleição do grupo é inválida.');
+  exigir(typeof dado.pedidaPor === 'string' && dado.pedidaPor !== '', 'A eleição do grupo está sem quem a pediu.');
+  exigir(ehRegistroDeTexto(dado.votos), 'Os votos da eleição são inválidos.');
+  exigir(
+    dado.empatados === null ||
+      (Array.isArray(dado.empatados) && dado.empatados.every((id) => typeof id === 'string' && id !== '')),
+    'O empate da eleição é inválido.',
+  );
+  return {
+    pedidaPor: dado.pedidaPor,
+    votos: dado.votos as Record<string, string>,
+    empatados: dado.empatados as string[] | null,
+  };
+}
+
+function lerResultadoDaEleicao(dado: unknown): ResultadoDaEleicao | null {
+  if (dado === undefined || dado === null) {
+    return null;
+  }
+  exigir(ehObjeto(dado), 'O resultado da última eleição é inválido.');
+  exigir(dado.vencedorId === null || typeof dado.vencedorId === 'string', 'O vencedor da última eleição é inválido.');
+  exigir(
+    ehObjeto(dado.contagem) && Object.values(dado.contagem).every((n) => Number.isInteger(n) && (n as number) > 0),
+    'A contagem da última eleição é inválida.',
+  );
+  exigir(typeof dado.desempatePeloMestre === 'boolean', 'O desempate da última eleição é inválido.');
+  return {
+    vencedorId: dado.vencedorId,
+    contagem: dado.contagem as Record<string, number>,
+    desempatePeloMestre: dado.desempatePeloMestre,
+  };
+}
+
 function lerGrupo(dado: unknown): EstadoGrupo {
   exigir(ehObjeto(dado), 'O arquivo não tem o grupo.');
   const ids = (lista: unknown, oQue: string) => {
@@ -240,6 +283,8 @@ function lerGrupo(dado: unknown): EstadoGrupo {
       exigir(dado.movimentoTravado === undefined || typeof dado.movimentoTravado === 'boolean', 'A trava do movimento é inválida.');
       return dado.movimentoTravado === true;
     })(),
+    eleicao: lerEleicao(dado.eleicao),
+    ultimaEleicao: lerResultadoDaEleicao(dado.ultimaEleicao),
   };
 }
 

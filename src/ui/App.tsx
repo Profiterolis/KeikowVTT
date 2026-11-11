@@ -18,12 +18,15 @@ import { criarLojaRegistro, type LojaRegistro } from '../core/registro';
 import {
   alcanceDaVisao,
   criarLojaGrupo,
+  eleitores,
+  votosValidos,
   grupoVistoPor,
   membrosPresentes,
   motivoParaNaoConduzir,
   passosPossiveis,
   podeConduzir,
   type ContextoDoGrupo,
+  type EstadoGrupo,
   type LojaGrupo,
   type PassoPossivel,
 } from '../core/grupo';
@@ -840,6 +843,7 @@ function Editor({
               setHexSelecionado(null);
               setPainelLateral(painelLateral === 'grupo' ? null : 'grupo');
             }}
+            avisoEleicao={avisoDaEleicao(grupo, agindoComoId, contextoGrupo)}
             diarioAberto={painelLateral === 'diario'}
             aoAlternarDiario={() => {
               setHexSelecionado(null);
@@ -932,4 +936,21 @@ function Editor({
     </div>
     </ContextoRegras.Provider>
   );
+}
+
+/**
+ * O que a barra do grupo avisa sobre a eleição do líder: quem ainda não votou é chamado a votar;
+ * no empate, o mestre é chamado a decidir; os outros só sabem que há uma eleição.
+ */
+function avisoDaEleicao(grupo: EstadoGrupo, participanteId: string, contexto: ContextoDoGrupo): string | null {
+  const { eleicao } = grupo;
+  if (!eleicao) {
+    return null;
+  }
+  if (eleicao.empatados) {
+    return ehMestre(participanteId) ? '🗳️ Empate: decida o líder' : '🗳️ Eleição empatada';
+  }
+  const deveVotar =
+    eleitores(grupo, contexto).includes(participanteId) && !(participanteId in votosValidos(grupo, contexto));
+  return deveVotar ? '🗳️ Vote na eleição' : '🗳️ Eleição em andamento';
 }

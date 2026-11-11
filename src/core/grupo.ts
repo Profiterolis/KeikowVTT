@@ -71,6 +71,31 @@ export interface EntradaDaViagem {
   readonly relogioDepois: number;
 }
 
+/**
+ * Uma eleição do líder em andamento. Vota um jogador por vez (não uma ficha), em um
+ * personagem de jogador do grupo; o mestre não vota, só encerra, cancela e desempata.
+ */
+export interface Eleicao {
+  /** Quem pediu: pode cancelar, além do mestre. */
+  readonly pedidaPor: string;
+  /** Jogador → ficha em que votou. Pode trocar até a eleição acabar. */
+  readonly votos: Readonly<Record<string, string>>;
+  /** Preenchido quando a contagem empatou: as fichas empatadas, esperando o mestre escolher. */
+  readonly empatados: readonly string[] | null;
+}
+
+/** O resultado da última eleição, que todos veem até a próxima. */
+export interface ResultadoDaEleicao {
+  /** `null` quando ninguém votou: nada mudou. */
+  readonly vencedorId: string | null;
+  /** Ficha → votos; não diz quem votou em quem. */
+  readonly contagem: Readonly<Record<string, number>>;
+  readonly desempatePeloMestre: boolean;
+}
+
+/** No lugar do voto dos outros jogadores, para quem não é o mestre: mostra que votou, não em quem. */
+export const VOTO_SECRETO = '?';
+
 export interface EstadoGrupo {
   /** Hex onde o grupo está, ou `null` enquanto o mestre não o posicionou. */
   readonly posicao: CoordHex | null;
@@ -97,6 +122,9 @@ export interface EstadoGrupo {
    * O dono de cada ficha aplica o próprio; o mestre pode aplicar em todas.
    */
   readonly descansosPendentes: Readonly<Record<string, TipoDeDescanso>>;
+  /** A eleição do líder em andamento, ou `null`. */
+  readonly eleicao: Eleicao | null;
+  readonly ultimaEleicao: ResultadoDaEleicao | null;
 }
 
 /** Guarda as últimas entradas: o diário é para consulta, não um arquivo eterno. */
@@ -113,6 +141,8 @@ export const GRUPO_INICIAL: EstadoGrupo = {
   visaoExtra: {},
   movimentoTravado: false,
   descansosPendentes: {},
+  eleicao: null,
+  ultimaEleicao: null,
 };
 
 /** Mesmo nome de antes, para quem só precisa de um grupo vazio. */
@@ -149,6 +179,16 @@ export type AcaoGrupo =
   | { readonly tipo: 'AcertarRelogio'; readonly relogio: number }
   /** Só o mestre: escreve uma linha no diário, no momento atual. */
   | { readonly tipo: 'AnotarNaViagem'; readonly texto: string }
+  /** Um jogador com personagem no grupo (ou o mestre) abre a eleição do líder. */
+  | { readonly tipo: 'PedirEleicao' }
+  /** Um jogador vota (ou troca o voto) num personagem de jogador do grupo. */
+  | { readonly tipo: 'Votar'; readonly fichaId: string }
+  /** Só o mestre: conta os votos sem esperar todos. */
+  | { readonly tipo: 'EncerrarEleicao' }
+  /** O mestre ou quem pediu. */
+  | { readonly tipo: 'CancelarEleicao' }
+  /** Só o mestre: escolhe entre os empatados. */
+  | { readonly tipo: 'DesempatarEleicao'; readonly fichaId: string }
   /** Desfaz o último acontecimento do diário, com a posição e o relógio. */
   | { readonly tipo: 'DesfazerViagem' }
   | { readonly tipo: 'CarregarGrupo'; readonly estado: EstadoGrupo };
@@ -335,12 +375,94 @@ export function grupoNumPovoado(estado: EstadoGrupo, contexto: ContextoDoGrupo):
   return hex ? tagsDoTile(contexto.obterViagem(), hex.terreno).some((t) => t.id === 'povoado') : false;
 }
 
+// ---------- Eleição do líder ----------
+
+/** Quem vota: cada jogador com ao menos um personagem no grupo, uma vez só. O mestre não vota. */
+export function eleitores(estado: EstadoGrupo, contexto: ContextoDoGrupo): string[] {
+  const donos = membrosPresentes(estado, contexto).map((id) => contexto.obterDonoDaFicha(id) ?? '');
+  return [...new Set(donos.filter((dono) => dono !== '' && !ehMestre(dono)))];
+}
+
+/** Em quem se vota: os personagens de jogadores no grupo. Com um NPC liderando, só o mestre moveria. */
+export function candidatos(estado: EstadoGrupo, contexto: ContextoDoGrupo): string[] {
+  return membrosPresentes(estado, contexto).filter((id) => {
+    const dono = contexto.obterDonoDaFicha(id);
+    return dono !== null && !ehMestre(dono);
+  });
+}
+
+/**
+ * Os votos que ainda valem: de quem ainda é eleitor, num candidato que ainda está no grupo.
+ * Quem sai perde o voto; quem votou num candidato que saiu vota de novo.
+ */
+export function votosValidos(estado: EstadoGrupo, contexto: ContextoDoGrupo): Record<string, string> {
+  const { eleicao } = estado;
+  if (!eleicao) {
+    return {};
+  }
+  const quemVota = new Set(eleitores(estado, contexto));
+  const emQuem = new Set(candidatos(estado, contexto));
+  return Object.fromEntries(
+    Object.entries(eleicao.votos).filter(
+      ([eleitor, ficha]) => quemVota.has(eleitor) && (ficha === VOTO_SECRETO || emQuem.has(ficha)),
+    ),
+  );
+}
+
+/** Ficha → votos, só com os votos que valem. */
+export function contagemDaEleicao(estado: EstadoGrupo, contexto: ContextoDoGrupo): Record<string, number> {
+  const contagem: Record<string, number> = {};
+  for (const ficha of Object.values(votosValidos(estado, contexto))) {
+    if (ficha !== VOTO_SECRETO) {
+      contagem[ficha] = (contagem[ficha] ?? 0) + 1;
+    }
+  }
+  return contagem;
+}
+
+/**
+ * Conta os votos: o mais votado lidera, mesmo sem metade dos votos. Num empate, a eleição
+ * fica esperando o mestre escolher entre os empatados. Sem votos, nada muda.
+ */
+function apurar(estado: EstadoGrupo, contexto: ContextoDoGrupo): EstadoGrupo {
+  const { eleicao } = estado;
+  if (!eleicao) {
+    return estado;
+  }
+  const contagem = contagemDaEleicao(estado, contexto);
+  const maior = Math.max(0, ...Object.values(contagem));
+  const maisVotados = maior === 0 ? [] : candidatos(estado, contexto).filter((id) => contagem[id] === maior);
+  if (maisVotados.length > 1) {
+    return { ...estado, eleicao: { ...eleicao, empatados: maisVotados } };
+  }
+  const vencedorId = maisVotados[0] ?? null;
+  return {
+    ...estado,
+    liderId: vencedorId ?? estado.liderId,
+    eleicao: null,
+    ultimaEleicao: { vencedorId, contagem, desempatePeloMestre: false },
+  };
+}
+
 /**
  * O grupo como um participante pode recebê-lo: o diário de viagem é só do mestre, então os
- * jogadores recebem o grupo sem ele. No online, é isto que o servidor manda a cada jogador.
+ * jogadores recebem o grupo sem ele, e sem saber em quem os outros votaram. No online, é isto que o servidor manda a cada jogador.
  */
 export function grupoVistoPor(estado: EstadoGrupo, participanteId: string): EstadoGrupo {
-  return ehMestre(participanteId) || estado.historico.length === 0 ? estado : { ...estado, historico: [] };
+  if (ehMestre(participanteId)) {
+    return estado;
+  }
+  // O voto é secreto: cada jogador vê o próprio e só que os outros já votaram.
+  const eleicao = estado.eleicao && {
+    ...estado.eleicao,
+    votos: Object.fromEntries(
+      Object.entries(estado.eleicao.votos).map(([eleitor, ficha]) => [
+        eleitor,
+        eleitor === participanteId ? ficha : VOTO_SECRETO,
+      ]),
+    ),
+  };
+  return { ...estado, historico: [], eleicao };
 }
 
 // ---------- Permissões ----------
@@ -366,6 +488,17 @@ export function permissaoNoGrupo(
     return contexto.obterDonoDaFicha(acao.fichaId) === autorId
       ? PERMITIDO
       : { ok: false, motivo: 'Só o dono da ficha (ou o mestre) aplica o descanso nela.' };
+  }
+  // A eleição é de quem tem personagem no grupo; cancelar, também de quem a pediu.
+  if (acao.tipo === 'PedirEleicao' || acao.tipo === 'Votar') {
+    return eleitores(estado, contexto).includes(autorId)
+      ? PERMITIDO
+      : { ok: false, motivo: 'Só quem tem um personagem no grupo participa da eleição.' };
+  }
+  if (acao.tipo === 'CancelarEleicao') {
+    return estado.eleicao?.pedidaPor === autorId
+      ? PERMITIDO
+      : { ok: false, motivo: 'Só o mestre ou quem pediu a eleição a cancela.' };
   }
   const condutor = quemConduz(estado, contexto);
   if (!ACOES_DO_LIDER.has(acao.tipo) || condutor !== autorId) {
@@ -628,6 +761,71 @@ export function aplicarAcaoGrupo(
           { posicao: estado.posicao, relogio: estado.relogio, viajadoHoje: estado.viajadoHoje },
         ),
       );
+    }
+
+    case 'PedirEleicao':
+      if (estado.eleicao) {
+        return recusa('Já há uma eleição em andamento.');
+      }
+      if (candidatos(estado, contexto).length < 2) {
+        return recusa('Uma eleição precisa de pelo menos dois personagens de jogadores no grupo.');
+      }
+      return ok({ ...estado, eleicao: { pedidaPor: autorId, votos: {}, empatados: null } });
+
+    case 'Votar': {
+      const { eleicao } = estado;
+      if (!eleicao) {
+        return recusa('Não há eleição em andamento.');
+      }
+      if (eleicao.empatados) {
+        return recusa('A votação empatou: agora o mestre escolhe entre os empatados.');
+      }
+      if (!eleitores(estado, contexto).includes(autorId)) {
+        return recusa('O mestre não vota: ele encerra a eleição e desempata.');
+      }
+      if (!candidatos(estado, contexto).includes(acao.fichaId)) {
+        return recusa('Só um personagem de jogador do grupo pode ser votado.');
+      }
+      if (eleicao.votos[autorId] === acao.fichaId) {
+        return ok(estado);
+      }
+      const votou = { ...estado, eleicao: { ...eleicao, votos: { ...eleicao.votos, [autorId]: acao.fichaId } } };
+      // Com todos os votos dados, a contagem é automática.
+      const validos = votosValidos(votou, contexto);
+      const todos = eleitores(votou, contexto).every((eleitor) => eleitor in validos);
+      return ok(todos ? apurar(votou, contexto) : votou);
+    }
+
+    case 'EncerrarEleicao':
+      if (!estado.eleicao) {
+        return recusa('Não há eleição em andamento.');
+      }
+      if (estado.eleicao.empatados) {
+        return recusa('A votação empatou: escolha um dos empatados.');
+      }
+      return ok(apurar(estado, contexto));
+
+    case 'CancelarEleicao':
+      return ok(estado.eleicao ? { ...estado, eleicao: null } : estado);
+
+    case 'DesempatarEleicao': {
+      const empatados = estado.eleicao?.empatados;
+      if (!empatados) {
+        return recusa('Não há empate para decidir.');
+      }
+      if (!empatados.includes(acao.fichaId) || !candidatos(estado, contexto).includes(acao.fichaId)) {
+        return recusa('Escolha um dos empatados.');
+      }
+      return ok({
+        ...estado,
+        liderId: acao.fichaId,
+        eleicao: null,
+        ultimaEleicao: {
+          vencedorId: acao.fichaId,
+          contagem: contagemDaEleicao(estado, contexto),
+          desempatePeloMestre: true,
+        },
+      });
     }
 
     case 'DesfazerViagem': {

@@ -97,6 +97,8 @@ describe('o grupo no arquivo (versão 4)', () => {
     visaoExtra: { f2: 2 },
     movimentoTravado: true,
     descansosPendentes: { f1: 'longo' },
+    eleicao: { pedidaPor: 'j-ana', votos: { 'j-ana': 'f2' }, empatados: null },
+    ultimaEleicao: { vencedorId: 'f1', contagem: { f1: 2, f2: 1 }, desempatePeloMestre: false },
     historico: [
       {
         id: 1,
@@ -134,11 +136,13 @@ describe('o grupo no arquivo (versão 4)', () => {
   });
 
   it('um grupo gravado antes da visão extra ganha uma vazia', () => {
-    const { visaoExtra: _v, movimentoTravado: _m, descansosPendentes: _d, ...antigo } = grupoCompleto;
+    const { visaoExtra: _v, movimentoTravado: _m, descansosPendentes: _d, eleicao: _e, ultimaEleicao: _u, ...antigo } = grupoCompleto;
     const resultado = desserializarMapa(arquivo({ versao: 4, aparenciaOculta: APARENCIA_PADRAO, grupo: antigo, hexes: [] }));
     expect(resultado.ok && resultado.grupo.visaoExtra).toEqual({});
     expect(resultado.ok && resultado.grupo.movimentoTravado).toBe(false);
     expect(resultado.ok && resultado.grupo.descansosPendentes).toEqual({});
+    expect(resultado.ok && resultado.grupo.eleicao).toBeNull();
+    expect(resultado.ok && resultado.grupo.ultimaEleicao).toBeNull();
   });
 
   it('um "acampou" de antes dos descansos vira descanso longo no acampamento', () => {

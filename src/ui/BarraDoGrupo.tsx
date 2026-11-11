@@ -18,6 +18,8 @@ interface BarraDoGrupoProps {
   /** Só o mestre: o diário de viagem. */
   readonly diarioAberto: boolean;
   readonly aoAlternarDiario: () => void;
+  /** O aviso da eleição do líder para quem está agindo, ou `null` sem eleição. */
+  readonly avisoEleicao: string | null;
 }
 
 /** Avanços rápidos de tempo do mestre, em minutos. */
@@ -42,6 +44,7 @@ export function BarraDoGrupo({
   aoIrAteOGrupo,
   diarioAberto,
   aoAlternarDiario,
+  avisoEleicao,
 }: BarraDoGrupoProps) {
   const [acertando, setAcertando] = useState(false);
   const limite = viagem.horasPorDia * 60;
@@ -82,6 +85,11 @@ export function BarraDoGrupo({
         {descansoPendente && (
           <button type="button" className="barra-grupo-descanso" onClick={aoAlternarPainel} title="Abra o painel do grupo para aplicar o descanso na sua ficha">
             💤 Descanso pendente
+          </button>
+        )}
+        {avisoEleicao && (
+          <button type="button" className="barra-grupo-eleicao" onClick={aoAlternarPainel} title="Abra o painel do grupo para ver a eleição">
+            {avisoEleicao}
           </button>
         )}
       </div>

@@ -6,6 +6,7 @@ import type { LojaFichas } from '../core/fichas';
 import {
   formatarDuracao,
   grupoNumPovoado,
+  grupoVistoPor,
   liderPresente,
   membrosPresentes,
   quemConduz,
@@ -19,6 +20,7 @@ import type { LojaRolagens, RolagemRegistrada } from '../core/rolagens';
 import { ehMestre, VISIVEL_A_TODOS } from '../core/visibilidade';
 import { corDoMembro } from '../render/camadaGrupo';
 import { useRegras } from './contextoRegras';
+import { SecaoEleicao } from './SecaoEleicao';
 
 interface PainelGrupoProps {
   readonly lojaGrupo: LojaGrupo;
@@ -231,6 +233,15 @@ export function PainelGrupo({ lojaGrupo, lojaFichas, lojaRolagens, contexto, par
         )}
         {mestre && membros.length > 0 && !lider && <p className="aviso">Sem líder, só o mestre move o grupo.</p>}
       </section>
+
+      <SecaoEleicao
+        grupo={grupoVistoPor(grupo, autorId)}
+        lojaGrupo={lojaGrupo}
+        contexto={contexto}
+        autorId={autorId}
+        nomeDaFicha={nomeDaFicha}
+        nomeDoParticipante={nomeDoParticipante}
+      />
 
       <section className="painel-grupo-secao">
         <h3>Ritmo</h3>
