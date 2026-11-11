@@ -270,8 +270,14 @@ describe('regras diferentes', () => {
 
   it('regras sem o bloco de criação, gravadas antes do assistente, ganham o padrão', () => {
     const { criacao: _c, ...antigas } = REGRAS_PADRAO;
-    expect(lerRegras(JSON.parse(JSON.stringify(antigas)), REGRAS_PADRAO.criacao)).toEqual(REGRAS_PADRAO);
+    expect(lerRegras(JSON.parse(JSON.stringify(antigas)), REGRAS_PADRAO)).toEqual(REGRAS_PADRAO);
     expect(() => lerRegras(JSON.parse(JSON.stringify(antigas)))).toThrow('criação de personagem');
+  });
+
+  it('regras sem o bloco de viagem, gravadas antes da Fase 5, ganham o padrão', () => {
+    const { viagem: _v, ...antigas } = REGRAS_PADRAO;
+    expect(lerRegras(JSON.parse(JSON.stringify(antigas)), REGRAS_PADRAO)).toEqual(REGRAS_PADRAO);
+    expect(() => lerRegras(JSON.parse(JSON.stringify(antigas)))).toThrow('sem a viagem');
   });
 
   it.each<[string, Partial<Regras['criacao']>, string]>([

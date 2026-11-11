@@ -6,6 +6,7 @@
 import { ATRIBUTOS, type Atributo } from './entradas';
 import { lerFormula, normalizarNome, usoDaFormula, type FormulaLida } from './formulas';
 import { ehObjeto, ErroDeFormato, exigir } from './persistencia';
+import { lerViagem, problemasNaViagem, type RegrasDeViagem } from './viagem';
 
 export interface DefinicaoValor {
   /** Nome usado nas fórmulas e nos efeitos, como `ca`. */
@@ -75,6 +76,8 @@ export interface Regras {
   /** Os demais valores da ficha, na ordem em que aparecem. */
   readonly valores: readonly DefinicaoValor[];
   readonly criacao: RegrasDeCriacao;
+  /** Tempo de viagem no hexcrawl: tamanho do hex, ritmos e tags de terreno. */
+  readonly viagem: RegrasDeViagem;
 }
 
 /** Valores que vêm da própria ficha, e não de uma fórmula. */
@@ -314,6 +317,7 @@ export function conferirRegras(regras: Regras): ProblemaNasRegras[] {
     visitar(id);
   }
   problemas.push(...problemasNaCriacao(regras.criacao));
+  problemas.push(...problemasNaViagem(regras.viagem));
   return problemas;
 }
 
@@ -397,9 +401,14 @@ function lerCriacao(valor: unknown, padrao: RegrasDeCriacao): RegrasDeCriacao {
 
 /**
  * Lê regras guardadas num arquivo ou na campanha, e confere as fórmulas.
- * `padraoDaCriacao` completa regras antigas, sem o bloco de criação de personagem.
+ * `padrao` completa regras antigas, gravadas antes de existirem a criação de personagem ou a viagem.
  */
-export function lerRegras(valor: unknown, padraoDaCriacao?: RegrasDeCriacao): Regras {
+export interface PadroesDasRegras {
+  readonly criacao?: RegrasDeCriacao;
+  readonly viagem?: RegrasDeViagem;
+}
+
+export function lerRegras(valor: unknown, padrao: PadroesDasRegras = {}): Regras {
   exigir(ehObjeto(valor), 'As regras não são válidas.');
   const atributos = valor.atributos;
   exigir(ehObjeto(atributos), 'As regras estão sem os nomes dos atributos.');
@@ -450,8 +459,12 @@ export function lerRegras(valor: unknown, padraoDaCriacao?: RegrasDeCriacao): Re
       };
     }),
     criacao: (() => {
-      exigir(valor.criacao !== undefined || padraoDaCriacao !== undefined, 'As regras estão sem a criação de personagem.');
-      return lerCriacao(valor.criacao, padraoDaCriacao!);
+      exigir(valor.criacao !== undefined || padrao.criacao !== undefined, 'As regras estão sem a criação de personagem.');
+      return lerCriacao(valor.criacao, padrao.criacao!);
+    })(),
+    viagem: (() => {
+      exigir(valor.viagem !== undefined || padrao.viagem !== undefined, 'As regras estão sem a viagem.');
+      return lerViagem(valor.viagem, padrao.viagem!);
     })(),
   };
   const problemas = conferirRegras(regras);

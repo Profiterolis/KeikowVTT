@@ -90,7 +90,7 @@ function lerConteudo(dado: unknown): ConteudoCampanha {
     campanha: { nome, participantes: lista },
     registro: registro.map(lerEntrada),
     // Regras com problema são recusadas: uma fórmula quebrada não pode entrar escondida.
-    regras: regras === undefined ? REGRAS_PADRAO : lerRegras(regras, REGRAS_PADRAO.criacao),
+    regras: regras === undefined ? REGRAS_PADRAO : lerRegras(regras, REGRAS_PADRAO),
   };
 }
 

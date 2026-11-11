@@ -1,4 +1,5 @@
 import type { Regras } from './regras';
+import { REGRAS_DE_VIAGEM_PADRAO } from './viagem';
 
 /**
  * Regras parecidas com 5e, que acompanham o programa. São dados, não código:
@@ -101,4 +102,5 @@ export const REGRAS_PADRAO: Regras = {
     rolagem: '4d6kh3',
     maximoAtributo: 20,
   },
+  viagem: REGRAS_DE_VIAGEM_PADRAO,
 };
