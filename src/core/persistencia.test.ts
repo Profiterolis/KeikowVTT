@@ -96,6 +96,7 @@ describe('o grupo no arquivo (versão 4)', () => {
     viajadoHoje: 90,
     visaoExtra: { f2: 2 },
     movimentoTravado: true,
+    descansosPendentes: { f1: 'longo' },
     historico: [
       {
         id: 1,
@@ -111,7 +112,13 @@ describe('o grupo no arquivo (versão 4)', () => {
         antes: { posicao: { q: 0, r: 0 }, relogio: 1910, viajadoHoje: 0 },
         relogioDepois: 2000,
       },
-      { id: 3, autorId: 'mestre', acontecimento: { tipo: 'acampou' }, antes: { posicao: { q: 1, r: 0 }, relogio: 2000, viajadoHoje: 90 }, relogioDepois: 2000 },
+      {
+        id: 3,
+        autorId: 'mestre',
+        acontecimento: { tipo: 'descansou', descanso: 'longo', lugar: 'abrigo', nomeDoLugar: 'Estalagem' },
+        antes: { posicao: { q: 1, r: 0 }, relogio: 2000, viajadoHoje: 90, descansosPendentes: { f1: 'curto' } },
+        relogioDepois: 2000,
+      },
       { id: 4, autorId: 'mestre', acontecimento: { tipo: 'avancou', ateAManha: true }, antes: { posicao: { q: 1, r: 0 }, relogio: 2000, viajadoHoje: 90 }, relogioDepois: 2000 },
       { id: 5, autorId: 'mestre', acontecimento: { tipo: 'acertouRelogio' }, antes: { posicao: { q: 1, r: 0 }, relogio: 2000, viajadoHoje: 90 }, relogioDepois: 2000 },
     ],
@@ -126,10 +133,25 @@ describe('o grupo no arquivo (versão 4)', () => {
   });
 
   it('um grupo gravado antes da visão extra ganha uma vazia', () => {
-    const { visaoExtra: _v, movimentoTravado: _m, ...antigo } = grupoCompleto;
+    const { visaoExtra: _v, movimentoTravado: _m, descansosPendentes: _d, ...antigo } = grupoCompleto;
     const resultado = desserializarMapa(arquivo({ versao: 4, aparenciaOculta: APARENCIA_PADRAO, grupo: antigo, hexes: [] }));
     expect(resultado.ok && resultado.grupo.visaoExtra).toEqual({});
     expect(resultado.ok && resultado.grupo.movimentoTravado).toBe(false);
+    expect(resultado.ok && resultado.grupo.descansosPendentes).toEqual({});
+  });
+
+  it('um "acampou" de antes dos descansos vira descanso longo no acampamento', () => {
+    const antigo = {
+      ...grupoCompleto,
+      historico: [{ ...grupoCompleto.historico[2], acontecimento: { tipo: 'acampou' }, antes: { posicao: null, relogio: 0, viajadoHoje: 0 } }],
+    };
+    const resultado = desserializarMapa(arquivo({ versao: 4, aparenciaOculta: APARENCIA_PADRAO, grupo: antigo, hexes: [] }));
+    expect(resultado.ok && resultado.grupo.historico[0].acontecimento).toEqual({
+      tipo: 'descansou',
+      descanso: 'longo',
+      lugar: 'acampamento',
+      nomeDoLugar: '',
+    });
   });
 
   it('um mapa da versão 3 mantém a posição do grupo e ganha o resto padrão', () => {

@@ -175,6 +175,7 @@ describe('conferência e leitura', () => {
     ['dia de 30 horas', { horasPorDia: 30 }, 'até 24'],
     ['partida às 24 h', { horaDaPartida: 24 }, 'hora da partida'],
     ['descanso negativo', { horasDeDescanso: -1 }, 'horas de descanso'],
+    ['descanso curto de 30 h', { horasDeDescansoCurto: 30 }, 'descanso curto'],
     ['sem ritmos', { ritmos: [] }, 'ao menos um ritmo'],
     ['ritmo parado', { ritmos: [{ id: 'x', nome: 'X', kmPorHora: 0, nota: '' }] }, 'velocidade'],
     ['tag repetida', { tags: [...VIAGEM.tags, VIAGEM.tags[0]] }, 'duas tags'],
@@ -193,7 +194,7 @@ describe('conferência e leitura', () => {
   });
 
   it('um bloco gravado sem a hora da partida e o descanso ganha os padrões', () => {
-    const { horaDaPartida: _p, horasDeDescanso: _d, ...antigo } = VIAGEM;
+    const { horaDaPartida: _p, horasDeDescanso: _d, horasDeDescansoCurto: _c, ...antigo } = VIAGEM;
     expect(lerViagem(JSON.parse(JSON.stringify(antigo)), VIAGEM)).toEqual(VIAGEM);
   });
 

@@ -37,8 +37,10 @@ export interface RegrasDeViagem {
   readonly horasPorDia: number;
   /** Hora em que o grupo parte depois de acampar, como 8 (08:00). */
   readonly horaDaPartida: number;
-  /** Horas mínimas de um acampamento: o descanso longo do 5e dura 8 h. */
+  /** Horas mínimas de um descanso longo: o do 5e dura 8 h. */
   readonly horasDeDescanso: number;
+  /** Quanto dura um descanso curto: 1 h no 5e. */
+  readonly horasDeDescansoCurto: number;
   readonly ritmos: readonly RitmoDeViagem[];
   readonly tags: readonly TagDeTerreno[];
   /**
@@ -60,6 +62,7 @@ export const REGRAS_DE_VIAGEM_PADRAO: RegrasDeViagem = {
   horasPorDia: 8,
   horaDaPartida: 8,
   horasDeDescanso: 8,
+  horasDeDescansoCurto: 1,
   ritmos: [
     { id: 'lento', nome: 'Lento', kmPorHora: 3, nota: 'O grupo pode andar com furtividade.' },
     { id: 'normal', nome: 'Normal', kmPorHora: 4.5, nota: '' },
@@ -283,6 +286,9 @@ export function problemasNaViagem(viagem: RegrasDeViagem): { onde: string; erro:
   if (!Number.isFinite(viagem.horasDeDescanso) || viagem.horasDeDescanso < 0 || viagem.horasDeDescanso > 24) {
     problemas.push({ onde, erro: 'As horas de descanso precisam ser de 0 a 24.' });
   }
+  if (!Number.isFinite(viagem.horasDeDescansoCurto) || viagem.horasDeDescansoCurto < 0 || viagem.horasDeDescansoCurto > 24) {
+    problemas.push({ onde, erro: 'As horas do descanso curto precisam ser de 0 a 24.' });
+  }
   if (viagem.ritmos.length === 0) {
     problemas.push({ onde, erro: 'A viagem precisa de ao menos um ritmo.' });
   }
@@ -353,6 +359,8 @@ export function lerViagem(valor: unknown, padrao: RegrasDeViagem): RegrasDeViage
     // Acrescentadas depois do primeiro formato do bloco: faltando, valem as padrão.
     horaDaPartida: valor.horaDaPartida === undefined ? padrao.horaDaPartida : numero(valor, 'horaDaPartida', onde),
     horasDeDescanso: valor.horasDeDescanso === undefined ? padrao.horasDeDescanso : numero(valor, 'horasDeDescanso', onde),
+    horasDeDescansoCurto:
+      valor.horasDeDescansoCurto === undefined ? padrao.horasDeDescansoCurto : numero(valor, 'horasDeDescansoCurto', onde),
     ritmos: valor.ritmos.map((r, i) => {
       const local = `O ritmo nº ${i + 1}`;
       exigir(ehObjeto(r), `${local} não é válido.`);

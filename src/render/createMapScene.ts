@@ -2,6 +2,7 @@ import { Application } from 'pixi.js';
 import { Viewport } from 'pixi-viewport';
 import type { LojaGrupo } from '../core/grupo';
 import {
+  hexParaMundo,
   linhaHex,
   mundoParaHex,
   type AreaMundo,
@@ -77,6 +78,8 @@ interface ControlesCena {
   moverTokenVisual(ponto: PontoMundo | null): void;
   /** Redesenha o token, por exemplo quando um membro muda de nome. */
   atualizarGrupo(): void;
+  /** Leva a câmera, deslizando, até o hex do grupo. */
+  centralizarNoGrupo(): void;
   cancelarAssinatura(): void;
 }
 
@@ -136,6 +139,7 @@ export function createMapScene(container: HTMLElement, opcoes: OpcoesCena): Cena
     marcarGrupoSelecionado: (selecionado) => controles?.marcarGrupoSelecionado(selecionado),
     moverTokenVisual: (ponto) => controles?.moverTokenVisual(ponto),
     atualizarGrupo: () => controles?.atualizarGrupo(),
+    centralizarNoGrupo: () => controles?.centralizarNoGrupo(),
     destruir() {
       disposed = true;
       controles?.cancelarAssinatura();
@@ -374,6 +378,13 @@ function montarCena(app: Application, catalogo: Catalogo, opcoes: OpcoesCena): C
     marcarGrupoSelecionado: grupo.marcarSelecionado,
     moverTokenVisual: grupo.moverVisual,
     atualizarGrupo: atualizarCamadas,
+    centralizarNoGrupo: () => {
+      const { posicao } = opcoes.lojaGrupo.obterEstado();
+      if (posicao) {
+        const centro = hexParaMundo(posicao);
+        camera.animate({ position: { x: centro.x, y: centro.y }, time: 450, ease: 'easeInOutSine', removeOnInterrupt: true });
+      }
+    },
     definirModoJogador: (participanteId, alcance = 1) => {
       jogadorId = participanteId;
       alcanceDoJogador = alcance;

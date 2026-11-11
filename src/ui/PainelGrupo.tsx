@@ -1,15 +1,20 @@
 import { useState, useSyncExternalStore } from 'react';
-import { rolarTeste } from '../core/acoesDaFicha';
+import { descansoCurto, descansoLongo, rolarTeste } from '../core/acoesDaFicha';
 import { calcularFicha } from '../core/calculoDaFicha';
 import type { Participante } from '../core/campanha';
 import type { LojaFichas } from '../core/fichas';
 import {
+  formatarDuracao,
+  grupoNumPovoado,
   liderPresente,
   membrosPresentes,
   quemConduz,
   type ContextoDoGrupo,
   type LojaGrupo,
+  type LugarDoDescanso,
+  type TipoDeDescanso,
 } from '../core/grupo';
+import type { Ficha } from '../core/fichas';
 import type { LojaRolagens, RolagemRegistrada } from '../core/rolagens';
 import { ehMestre, VISIVEL_A_TODOS } from '../core/visibilidade';
 import { corDoMembro } from '../render/camadaGrupo';
@@ -50,6 +55,40 @@ export function PainelGrupo({ lojaGrupo, lojaFichas, lojaRolagens, contexto, par
   const [pericia, setPericia] = useState(regras.pericias.find((p) => p.id === 'sobrevivencia')?.id ?? regras.pericias[0]?.id ?? '');
   const [ultimoTeste, setUltimoTeste] = useState<RolagemRegistrada | null>(null);
   const [erroDoTeste, setErroDoTeste] = useState<string | null>(null);
+  const [lugar, setLugar] = useState<LugarDoDescanso>('acampamento');
+  const [nomeDoLugar, setNomeDoLugar] = useState('');
+  const numPovoado = grupoNumPovoado(grupo, contexto);
+  // Fora de um povoado, só o mestre oferece abrigo (um convite numa fazenda isolada, por exemplo).
+  const podeAbrigo = mestre || numPovoado;
+
+  const descansar = (descanso: TipoDeDescanso) => {
+    lojaGrupo.despachar({ tipo: 'Descansar', descanso, lugar: podeAbrigo ? lugar : 'acampamento', nomeDoLugar });
+  };
+
+  const comDescanso = (ficha: Ficha, descanso: TipoDeDescanso) =>
+    descanso === 'longo' ? descansoLongo(ficha) : descansoCurto(ficha);
+
+  /** Aplica o descanso pendente na ficha (usos, espaços, PV) e tira a pendência. */
+  const aplicarDescanso = (id: string) => {
+    const ficha = fichas[id];
+    const descanso = grupo.descansosPendentes[id];
+    if (!ficha || !descanso) {
+      return;
+    }
+    lojaFichas.despachar({ tipo: 'EditarFicha', ficha: comDescanso(ficha, descanso) });
+    lojaGrupo.despachar({ tipo: 'ConcluirDescanso', fichaId: id });
+  };
+
+  /** O mestre aplica em todas as fichas de uma vez, num só passo de desfazer das fichas. */
+  const aplicarEmTodos = () => {
+    const pendentes = membros.filter((id) => grupo.descansosPendentes[id] && fichas[id]);
+    lojaFichas.despachar({
+      tipo: 'EditarFichas',
+      fichas: pendentes.map((id) => comDescanso(fichas[id], grupo.descansosPendentes[id])),
+    });
+    pendentes.forEach((id) => lojaGrupo.despachar({ tipo: 'ConcluirDescanso', fichaId: id }));
+  };
+  const algumPendente = membros.some((id) => grupo.descansosPendentes[id]);
 
   const rolarTesteDoGrupo = () => {
     const ficha = lider ? fichas[lider] : undefined;
@@ -115,6 +154,20 @@ export function PainelGrupo({ lojaGrupo, lojaFichas, lojaRolagens, contexto, par
                   {id === lider && <span title="Líder">👑 </span>}
                   {nomeDaFicha(id)}
                   <small>{nomeDoParticipante(dono)}</small>
+                  {grupo.descansosPendentes[id] && (
+                    <span className="painel-grupo-pendente">
+                      💤 Descanso {grupo.descansosPendentes[id]} pendente
+                      {(mestre || dono === autorId) && (
+                        <button
+                          type="button"
+                          title="Aplica o descanso nesta ficha: usos, espaços de magia e (no longo) PV"
+                          onClick={() => aplicarDescanso(id)}
+                        >
+                          Fazer
+                        </button>
+                      )}
+                    </span>
+                  )}
                 </span>
                 <span className="painel-grupo-acoes">
                   {id !== lider && conduz && (
@@ -197,6 +250,64 @@ export function PainelGrupo({ lojaGrupo, lojaFichas, lojaRolagens, contexto, par
         </div>
         {regras.viagem.ritmos.find((r) => r.id === grupo.ritmo)?.nota && (
           <p>{regras.viagem.ritmos.find((r) => r.id === grupo.ritmo)?.nota}</p>
+        )}
+      </section>
+
+      <section className="painel-grupo-secao">
+        <h3>Descanso</h3>
+        {conduz ? (
+          <>
+            <div className="ferramentas">
+              <button type="button" aria-pressed={lugar === 'acampamento'} onClick={() => setLugar('acampamento')}>
+                ⛺ Acampamento
+              </button>
+              <button
+                type="button"
+                aria-pressed={lugar === 'abrigo' && podeAbrigo}
+                disabled={!podeAbrigo}
+                title={podeAbrigo ? 'Quarto alugado, casa, convite para dormir…' : 'Só num povoado; fora dele, o mestre decide se há abrigo.'}
+                onClick={() => setLugar('abrigo')}
+              >
+                🏠 Abrigo
+              </button>
+            </div>
+            {lugar === 'abrigo' && podeAbrigo && (
+              <input
+                className="painel-grupo-texto"
+                value={nomeDoLugar}
+                placeholder="Onde? (opcional, ex.: Estalagem do Javali)"
+                onChange={(e) => setNomeDoLugar(e.target.value)}
+              />
+            )}
+            <div className="painel-grupo-linha">
+              <button
+                type="button"
+                disabled={membros.length === 0}
+                title={`Passa ${formatarDuracao(regras.viagem.horasDeDescansoCurto * 60)}; não zera as horas de viagem do dia.`}
+                onClick={() => descansar('curto')}
+              >
+                Descanso curto
+              </button>
+              <button
+                type="button"
+                disabled={membros.length === 0}
+                title={`Até a partida seguinte, com ao menos ${formatarDuracao(regras.viagem.horasDeDescanso * 60)}; zera as horas de viagem do dia.`}
+                onClick={() => descansar('longo')}
+              >
+                Descanso longo
+              </button>
+            </div>
+            {!mestre && !numPovoado && <p>Abrigo (quarto, casa, convite) só num povoado, ou quando o mestre oferecer.</p>}
+          </>
+        ) : (
+          <p>O líder decide quando e onde o grupo descansa.</p>
+        )}
+        {mestre && algumPendente && (
+          <div className="painel-grupo-linha">
+            <button type="button" onClick={aplicarEmTodos} title="Aplica os descansos pendentes em todas as fichas do grupo">
+              Aplicar descansos em todos
+            </button>
+          </div>
         )}
       </section>
 

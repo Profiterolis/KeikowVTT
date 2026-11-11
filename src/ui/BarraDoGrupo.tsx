@@ -11,6 +11,10 @@ interface BarraDoGrupoProps {
   readonly mestre: boolean;
   readonly painelAberto: boolean;
   readonly aoAlternarPainel: () => void;
+  /** Quem está agindo tem uma ficha com descanso para aplicar. */
+  readonly descansoPendente: boolean;
+  /** Leva a câmera até o grupo, para quem se perdeu arrastando o mapa. */
+  readonly aoIrAteOGrupo: () => void;
 }
 
 /** Avanços rápidos de tempo do mestre, em minutos. */
@@ -24,7 +28,16 @@ const AVANCOS: readonly [string, number][] = [
  * A barra do grupo, no topo do mapa, para todos: o relógio, as horas viajadas hoje e o ritmo,
  * como a barra de um CRPG. O mestre avança o tempo dali mesmo.
  */
-export function BarraDoGrupo({ grupo, lojaGrupo, viagem, mestre, painelAberto, aoAlternarPainel }: BarraDoGrupoProps) {
+export function BarraDoGrupo({
+  grupo,
+  lojaGrupo,
+  viagem,
+  mestre,
+  painelAberto,
+  aoAlternarPainel,
+  descansoPendente,
+  aoIrAteOGrupo,
+}: BarraDoGrupoProps) {
   const [acertando, setAcertando] = useState(false);
   const limite = viagem.horasPorDia * 60;
   const forcada = grupo.viajadoHoje > limite;
@@ -55,9 +68,17 @@ export function BarraDoGrupo({ grupo, lojaGrupo, viagem, mestre, painelAberto, a
             ⛔ Travado
           </span>
         )}
+        <button type="button" disabled={!grupo.posicao} title="Mostrar onde o grupo está" onClick={aoIrAteOGrupo}>
+          📍 Ir até o grupo
+        </button>
         <button type="button" aria-pressed={painelAberto} onClick={aoAlternarPainel}>
           Grupo
         </button>
+        {descansoPendente && (
+          <button type="button" className="barra-grupo-descanso" onClick={aoAlternarPainel} title="Abra o painel do grupo para aplicar o descanso na sua ficha">
+            💤 Descanso pendente
+          </button>
+        )}
       </div>
       {mestre && (
         <div className="barra-grupo-linha barra-grupo-mestre">

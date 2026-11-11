@@ -3,12 +3,13 @@ import {
   alcanceDaVisao,
   aplicarAcaoGrupo,
   formatarDuracao,
+  grupoNumPovoado,
   motivoParaNaoConduzir,
   passosPossiveis,
   podeConduzir,
   trilhaDoGrupo,
   criarLojaGrupo,
-  fimDoAcampamento,
+  fimDoDescansoLongo,
   formatarRelogio,
   GRUPO_INICIAL,
   membrosPresentes,
@@ -81,9 +82,9 @@ describe('relógio', () => {
   });
 
   it('acampar leva até a partida, com ao menos 8 h de descanso', () => {
-    expect(formatarRelogio(fimDoAcampamento(hora(1, 20), VIAGEM))).toBe('Dia 2, 08:00');
-    expect(formatarRelogio(fimDoAcampamento(hora(2, 2), VIAGEM))).toBe('Dia 2, 10:00');
-    expect(formatarRelogio(fimDoAcampamento(hora(1, 8), VIAGEM))).toBe('Dia 2, 08:00');
+    expect(formatarRelogio(fimDoDescansoLongo(hora(1, 20), VIAGEM))).toBe('Dia 2, 08:00');
+    expect(formatarRelogio(fimDoDescansoLongo(hora(2, 2), VIAGEM))).toBe('Dia 2, 10:00');
+    expect(formatarRelogio(fimDoDescansoLongo(hora(1, 8), VIAGEM))).toBe('Dia 2, 08:00');
   });
 });
 
@@ -144,7 +145,7 @@ describe('andar', () => {
 describe('tempo', () => {
   it('acampar zera as horas do dia e leva até a manhã', () => {
     const cansado = aplicar(aplicar(viajando, { tipo: 'MoverGrupo', para: B }), { tipo: 'AvancarTempo', minutos: 600 });
-    const acampado = aplicar(cansado, { tipo: 'Acampar' });
+    const acampado = aplicar(cansado, { tipo: 'Descansar', descanso: 'longo', lugar: 'acampamento' });
     expect(formatarRelogio(acampado.relogio)).toBe('Dia 2, 08:00');
     expect(acampado.viajadoHoje).toBe(0);
   });
@@ -178,7 +179,7 @@ describe('tempo', () => {
 
   it('desfazer um acampamento devolve as horas do dia', () => {
     const andou = aplicar(viajando, { tipo: 'MoverGrupo', para: B });
-    expect(aplicar(aplicar(andou, { tipo: 'Acampar' }), { tipo: 'DesfazerViagem' })).toEqual(andou);
+    expect(aplicar(aplicar(andou, { tipo: 'Descansar', descanso: 'longo', lugar: 'acampamento' }), { tipo: 'DesfazerViagem' })).toEqual(andou);
   });
 });
 
@@ -225,7 +226,7 @@ describe('loja e permissões', () => {
     const { loja, recusas } = montar({ id: 'j-ana' });
     expect(loja.despachar({ tipo: 'DefinirRitmo', ritmo: 'lento' })).toBe(true);
     expect(loja.despachar({ tipo: 'MoverGrupo', para: B })).toBe(true);
-    expect(loja.despachar({ tipo: 'Acampar' })).toBe(true);
+    expect(loja.despachar({ tipo: 'Descansar', descanso: 'longo', lugar: 'acampamento' })).toBe(true);
     expect(loja.despachar({ tipo: 'DefinirLider', fichaId: 'bia' })).toBe(true);
     expect(recusas).toEqual([]);
     expect(loja.obterEstado()).toMatchObject({ posicao: B, ritmo: 'lento', liderId: 'bia' });
@@ -415,5 +416,73 @@ describe('passos possíveis e trilha', () => {
     expect(formatarDuracao(120)).toBe('2 h');
     expect(formatarDuracao(90)).toBe('1 h 30 min');
     expect(formatarDuracao(45)).toBe('45 min');
+  });
+});
+
+describe('descansos', () => {
+  const longo = { tipo: 'Descansar', descanso: 'longo', lugar: 'acampamento' } as const;
+  const curto = { tipo: 'Descansar', descanso: 'curto', lugar: 'acampamento' } as const;
+
+  it('o curto leva 1 h e não zera as horas do dia; o longo vai até a manhã e zera', () => {
+    const andou = aplicar(viajando, { tipo: 'MoverGrupo', para: B });
+    const descansouPouco = aplicar(andou, curto);
+    expect(formatarRelogio(descansouPouco.relogio)).toBe('Dia 1, 11:00');
+    expect(descansouPouco.viajadoHoje).toBe(120);
+    const dormiu = aplicar(andou, longo);
+    expect(formatarRelogio(dormiu.relogio)).toBe('Dia 2, 08:00');
+    expect(dormiu.viajadoHoje).toBe(0);
+  });
+
+  it('cada membro fica com o descanso pendente; o longo vale mais que o curto', () => {
+    const descansou = aplicar(viajando, curto);
+    expect(descansou.descansosPendentes).toEqual({ ana: 'curto', bia: 'curto', guia: 'curto' });
+    expect(aplicar(descansou, longo).descansosPendentes).toEqual({ ana: 'longo', bia: 'longo', guia: 'longo' });
+    const comLongo = aplicar(viajando, longo);
+    expect(aplicar(comLongo, curto).descansosPendentes.ana).toBe('longo');
+  });
+
+  it('o diário guarda o tipo, o lugar e o nome do lugar', () => {
+    const naEstalagem = aplicar(viajando, { tipo: 'Descansar', descanso: 'longo', lugar: 'abrigo', nomeDoLugar: ' Estalagem do Javali ' });
+    expect(naEstalagem.historico.at(-1)?.acontecimento).toEqual({
+      tipo: 'descansou',
+      descanso: 'longo',
+      lugar: 'abrigo',
+      nomeDoLugar: 'Estalagem do Javali',
+    });
+  });
+
+  it('o dono aplica o descanso da própria ficha; outro jogador não; o mestre aplica em qualquer uma', () => {
+    const descansou = aplicar(viajando, longo);
+    const recusas: string[] = [];
+    const daBia = criarLojaGrupo(descansou, { obterAutorId: () => 'j-bia', aoRecusar: (m) => recusas.push(m) }, contexto);
+    expect(daBia.despachar({ tipo: 'ConcluirDescanso', fichaId: 'ana' })).toBe(false);
+    expect(daBia.despachar({ tipo: 'ConcluirDescanso', fichaId: 'bia' })).toBe(true);
+    expect(daBia.obterEstado().descansosPendentes).toEqual({ ana: 'longo', guia: 'longo' });
+    expect(recusas).toEqual(['Só o dono da ficha (ou o mestre) aplica o descanso nela.']);
+    expect(aplicar(descansou, { tipo: 'ConcluirDescanso', fichaId: 'guia' }).descansosPendentes).toEqual({ ana: 'longo', bia: 'longo' });
+  });
+
+  it('desfazer o descanso devolve as pendências de antes; desfazer um passo não mexe nelas', () => {
+    const descansou = aplicar(viajando, longo);
+    expect(aplicar(descansou, { tipo: 'DesfazerViagem' }).descansosPendentes).toEqual({});
+    const concluiu = aplicar(descansou, { tipo: 'ConcluirDescanso', fichaId: 'ana' });
+    const andou = aplicar(concluiu, { tipo: 'MoverGrupo', para: B });
+    expect(aplicar(andou, { tipo: 'DesfazerViagem' }).descansosPendentes).toEqual({ bia: 'longo', guia: 'longo' });
+  });
+
+  it('tirar um membro tira a pendência dele', () => {
+    const descansou = aplicar(viajando, longo);
+    expect(aplicar(descansou, { tipo: 'RemoverMembro', fichaId: 'bia' }).descansosPendentes).toEqual({ ana: 'longo', guia: 'longo' });
+  });
+
+  it('o líder pede abrigo só num povoado; o mestre, em qualquer lugar', () => {
+    const abrigo = { tipo: 'Descansar', descanso: 'longo', lugar: 'abrigo' } as const;
+    const recusas: string[] = [];
+    const doLider = criarLojaGrupo(viajando, { obterAutorId: () => 'j-ana', aoRecusar: (m) => recusas.push(m) }, contexto);
+    expect(grupoNumPovoado(viajando, contexto)).toBe(false);
+    expect(doLider.despachar(abrigo)).toBe(false);
+    expect(recusas[0]).toContain('povoado');
+    expect(doLider.despachar(longo)).toBe(true);
+    expect(aplicar(viajando, abrigo).historico.at(-1)?.acontecimento).toMatchObject({ lugar: 'abrigo' });
   });
 });

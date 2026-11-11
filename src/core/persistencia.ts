@@ -2,6 +2,7 @@ import { APARENCIA_PADRAO, type AparenciaOculta, type FundoOculto } from './apar
 import {
   GRUPO_INICIAL,
   type AcontecimentoDaViagem,
+  type TipoDeDescanso,
   type EntradaDaViagem,
   type EstadoGrupo,
   type MarcoDoGrupo,
@@ -132,7 +133,22 @@ function lerMarco(dado: unknown, onde: string): MarcoDoGrupo {
     posicao: lerCoordOuNada(dado.posicao, `${onde}: a posição anterior`),
     relogio: minutos(dado.relogio, `${onde}: o relógio anterior`),
     viajadoHoje: minutos(dado.viajadoHoje, `${onde}: o tempo viajado anterior`),
+    ...(dado.descansosPendentes === undefined
+      ? {}
+      : { descansosPendentes: lerPendentes(dado.descansosPendentes, `${onde}: os descansos anteriores`) }),
   };
+}
+
+/** Descansos que cada ficha ainda precisa aplicar. Grupos de antes dos descansos não têm nenhum. */
+function lerPendentes(dado: unknown, onde: string): Record<string, TipoDeDescanso> {
+  if (dado === undefined) {
+    return {};
+  }
+  exigir(
+    ehObjeto(dado) && Object.values(dado).every((d) => d === 'curto' || d === 'longo'),
+    `${onde} são inválidos.`,
+  );
+  return dado as Record<string, TipoDeDescanso>;
 }
 
 function lerAcontecimento(dado: unknown, onde: string): AcontecimentoDaViagem {
@@ -152,6 +168,13 @@ function lerAcontecimento(dado: unknown, onde: string): AcontecimentoDaViagem {
     case 'posicionou':
       return { tipo: 'posicionou', para: lerCoordOuNada(dado.para, `${onde}: a posição`) };
     case 'acampou':
+      // Diários de antes dos descansos: acampar era o descanso longo no acampamento.
+      return { tipo: 'descansou', descanso: 'longo', lugar: 'acampamento', nomeDoLugar: '' };
+    case 'descansou':
+      exigir(dado.descanso === 'curto' || dado.descanso === 'longo', `${onde}: o tipo de descanso é inválido.`);
+      exigir(dado.lugar === 'acampamento' || dado.lugar === 'abrigo', `${onde}: o lugar do descanso é inválido.`);
+      exigir(typeof dado.nomeDoLugar === 'string', `${onde}: o nome do lugar é inválido.`);
+      return { tipo: 'descansou', descanso: dado.descanso, lugar: dado.lugar, nomeDoLugar: dado.nomeDoLugar };
     case 'acertouRelogio':
       return { tipo: dado.tipo };
     case 'avancou':
@@ -208,6 +231,7 @@ function lerGrupo(dado: unknown): EstadoGrupo {
     viajadoHoje: minutos(dado.viajadoHoje, 'O tempo viajado hoje'),
     historico: dado.historico.map(lerEntradaDaViagem),
     visaoExtra: lerVisaoExtra(dado.visaoExtra),
+    descansosPendentes: lerPendentes(dado.descansosPendentes, 'Os descansos pendentes do grupo'),
     // Gravado a partir da trava do movimento; grupos de antes não o têm.
     movimentoTravado: (() => {
       exigir(dado.movimentoTravado === undefined || typeof dado.movimentoTravado === 'boolean', 'A trava do movimento é inválida.');

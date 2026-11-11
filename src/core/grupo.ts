@@ -6,12 +6,14 @@
  * de uma vez só, e quem move o grupo pode ser um jogador.
  */
 import { vizinhosHex, type CoordHex } from './hex';
+import { hexEm } from './mapa';
 import { criarMapaVazio, type EstadoMapa } from './mapa';
 import type { Permissao } from './permissoes';
 import { autorDe, criarEmissor, type OpcoesRegistro } from './registro';
 import { ehMestre } from './visibilidade';
 import {
   REGRAS_DE_VIAGEM_PADRAO,
+  tagsDoTile,
   tempoDoPasso,
   type MembroNaViagem,
   type ParteDoTempo,
@@ -28,7 +30,13 @@ export interface MarcoDoGrupo {
   /** Minutos desde a meia-noite do Dia 1. */
   readonly relogio: number;
   readonly viajadoHoje: number;
+  /** Só nos descansos: as pendências de antes, que o desfazer devolve. */
+  readonly descansosPendentes?: Readonly<Record<string, TipoDeDescanso>>;
 }
+
+export type TipoDeDescanso = 'curto' | 'longo';
+/** Acampamento ao ar livre, ou abrigo: quarto alugado, casa, convite para dormir. */
+export type LugarDoDescanso = 'acampamento' | 'abrigo';
 
 export type AcontecimentoDaViagem =
   | {
@@ -41,7 +49,13 @@ export type AcontecimentoDaViagem =
       readonly tags: readonly string[];
     }
   | { readonly tipo: 'posicionou'; readonly para: CoordHex | null }
-  | { readonly tipo: 'acampou' }
+  | {
+      readonly tipo: 'descansou';
+      readonly descanso: TipoDeDescanso;
+      readonly lugar: LugarDoDescanso;
+      /** Como "Estalagem do Javali"; vazio quando não foi dito. */
+      readonly nomeDoLugar: string;
+    }
   | { readonly tipo: 'avancou'; readonly ateAManha: boolean }
   | { readonly tipo: 'acertouRelogio' };
 
@@ -76,6 +90,11 @@ export interface EstadoGrupo {
   readonly visaoExtra: Readonly<Record<string, number>>;
   /** O mestre travou o movimento: o líder não anda até ele destravar. */
   readonly movimentoTravado: boolean;
+  /**
+   * Descansos que o grupo fez e que cada ficha ainda precisa aplicar (usos, espaços, PV).
+   * O dono de cada ficha aplica o próprio; o mestre pode aplicar em todas.
+   */
+  readonly descansosPendentes: Readonly<Record<string, TipoDeDescanso>>;
 }
 
 /** Guarda as últimas entradas: o diário é para consulta, não um arquivo eterno. */
@@ -91,6 +110,7 @@ export const GRUPO_INICIAL: EstadoGrupo = {
   historico: [],
   visaoExtra: {},
   movimentoTravado: false,
+  descansosPendentes: {},
 };
 
 /** Mesmo nome de antes, para quem só precisa de um grupo vazio. */
@@ -109,8 +129,18 @@ export type AcaoGrupo =
   | { readonly tipo: 'TravarMovimento'; readonly travado: boolean }
   /** Visão extra temporária de um membro; zero tira. */
   | { readonly tipo: 'DefinirVisaoExtra'; readonly fichaId: string; readonly extra: number }
-  /** Até a partida seguinte, com o mínimo de horas de descanso. Zera as horas do dia. */
-  | { readonly tipo: 'Acampar' }
+  /**
+   * Curto: as horas do descanso curto. Longo: até a partida seguinte, com o mínimo de horas
+   * de descanso, e zera as horas do dia. Abrigo, para o líder, só num povoado.
+   */
+  | {
+      readonly tipo: 'Descansar';
+      readonly descanso: TipoDeDescanso;
+      readonly lugar: LugarDoDescanso;
+      readonly nomeDoLugar?: string;
+    }
+  /** A ficha aplicou o descanso pendente: o dono dela ou o mestre. */
+  | { readonly tipo: 'ConcluirDescanso'; readonly fichaId: string }
   | { readonly tipo: 'AvancarTempo'; readonly minutos: number }
   /** Até a próxima hora da partida, sem acampar. Zera as horas do dia. */
   | { readonly tipo: 'AvancarAteAManha' }
@@ -155,10 +185,10 @@ function proximaPartida(relogio: number, viagem: RegrasDeViagem): number {
 }
 
 /**
- * Ao acampar, o grupo acorda na hora da partida, mas descansa ao menos as horas de descanso:
- * acampando às 20:00, parte às 08:00; acampando às 02:00, só às 10:00.
+ * No descanso longo, o grupo acorda na hora da partida, mas descansa ao menos as horas de
+ * descanso: deitando às 20:00, parte às 08:00; deitando às 02:00, só às 10:00.
  */
-export function fimDoAcampamento(relogio: number, viagem: RegrasDeViagem): number {
+export function fimDoDescansoLongo(relogio: number, viagem: RegrasDeViagem): number {
   return Math.max(proximaPartida(relogio, viagem), relogio + Math.round(viagem.horasDeDescanso * 60));
 }
 
@@ -295,10 +325,16 @@ export function trilhaDoGrupo(estado: EstadoGrupo): CoordHex[] {
   return trilha;
 }
 
+/** Se o grupo está num povoado (cidade, vila, castelo…), onde o líder pode pedir abrigo. */
+export function grupoNumPovoado(estado: EstadoGrupo, contexto: ContextoDoGrupo): boolean {
+  const hex = estado.posicao ? hexEm(contexto.obterMapa(), estado.posicao) : undefined;
+  return hex ? tagsDoTile(contexto.obterViagem(), hex.terreno).some((t) => t.id === 'povoado') : false;
+}
+
 // ---------- Permissões ----------
 
 /** O que quem controla o líder pode fazer; o resto é só do mestre. */
-const ACOES_DO_LIDER: ReadonlySet<AcaoGrupo['tipo']> = new Set(['MoverGrupo', 'DefinirRitmo', 'Acampar', 'DefinirLider']);
+const ACOES_DO_LIDER: ReadonlySet<AcaoGrupo['tipo']> = new Set(['MoverGrupo', 'DefinirRitmo', 'Descansar', 'DefinirLider']);
 
 /**
  * O mestre pode tudo. Quem controla o líder anda, muda o ritmo, acampa e passa a liderança
@@ -313,6 +349,12 @@ export function permissaoNoGrupo(
   if (ehMestre(autorId)) {
     return PERMITIDO;
   }
+  // Cada um aplica o descanso pendente da própria ficha, sem precisar do líder.
+  if (acao.tipo === 'ConcluirDescanso') {
+    return contexto.obterDonoDaFicha(acao.fichaId) === autorId
+      ? PERMITIDO
+      : { ok: false, motivo: 'Só o dono da ficha (ou o mestre) aplica o descanso nela.' };
+  }
   const condutor = quemConduz(estado, contexto);
   if (!ACOES_DO_LIDER.has(acao.tipo) || condutor !== autorId) {
     return {
@@ -325,6 +367,9 @@ export function permissaoNoGrupo(
   if (acao.tipo === 'MoverGrupo' && estado.movimentoTravado) {
     return { ok: false, motivo: 'O mestre travou o movimento do grupo.' };
   }
+  if (acao.tipo === 'Descansar' && acao.lugar === 'abrigo' && !grupoNumPovoado(estado, contexto)) {
+    return { ok: false, motivo: 'O líder só pede abrigo num povoado; fora dele, o mestre decide se há onde dormir.' };
+  }
   if (acao.tipo === 'DefinirLider' && acao.fichaId === null) {
     return { ok: false, motivo: 'O líder só passa a liderança para outro membro.' };
   }
@@ -332,6 +377,17 @@ export function permissaoNoGrupo(
 }
 
 // ---------- Aplicar ações ----------
+
+function semChavePendente(
+  registro: Readonly<Record<string, TipoDeDescanso>>,
+  chave: string,
+): Readonly<Record<string, TipoDeDescanso>> {
+  if (!(chave in registro)) {
+    return registro;
+  }
+  const { [chave]: _tirada, ...resto } = registro;
+  return resto;
+}
 
 function semChave(registro: Readonly<Record<string, number>>, chave: string): Readonly<Record<string, number>> {
   if (!(chave in registro)) {
@@ -361,13 +417,19 @@ export function aplicarAcaoGrupo(
   /** Anota o acontecimento no diário, guardando como era antes para o desfazer. */
   const comAcontecimento = (
     acontecimento: AcontecimentoDaViagem,
-    depois: Pick<EstadoGrupo, 'posicao' | 'relogio' | 'viajadoHoje'>,
+    depois: Pick<EstadoGrupo, 'posicao' | 'relogio' | 'viajadoHoje'> & Partial<Pick<EstadoGrupo, 'descansosPendentes'>>,
   ): EstadoGrupo => {
     const entrada: EntradaDaViagem = {
       id: (estado.historico.at(-1)?.id ?? 0) + 1,
       autorId,
       acontecimento,
-      antes: { posicao: estado.posicao, relogio: estado.relogio, viajadoHoje: estado.viajadoHoje },
+      antes: {
+        posicao: estado.posicao,
+        relogio: estado.relogio,
+        viajadoHoje: estado.viajadoHoje,
+        // Só o descanso mexe nas pendências; os outros acontecimentos não as devolvem ao desfazer.
+        ...(depois.descansosPendentes ? { descansosPendentes: estado.descansosPendentes } : {}),
+      },
       relogioDepois: depois.relogio,
     };
     return { ...estado, ...depois, historico: [...estado.historico, entrada].slice(-LIMITE_HISTORICO) };
@@ -435,6 +497,7 @@ export function aplicarAcaoGrupo(
         // Sem o líder, o grupo fica sem líder até o mestre escolher outro.
         liderId: estado.liderId === acao.fichaId ? null : estado.liderId,
         visaoExtra: semChave(estado.visaoExtra, acao.fichaId),
+        descansosPendentes: semChavePendente(estado.descansosPendentes, acao.fichaId),
       });
 
     case 'TravarMovimento':
@@ -477,13 +540,33 @@ export function aplicarAcaoGrupo(
       }
       return ok({ ...estado, ritmo: acao.ritmo });
 
-    case 'Acampar':
+    case 'Descansar': {
+      const longo = acao.descanso === 'longo';
+      // Cada membro fica com o descanso para aplicar; um longo vale mais que um curto pendente.
+      const pendentes = { ...estado.descansosPendentes };
+      for (const id of membrosPresentes(estado, contexto)) {
+        pendentes[id] = longo || pendentes[id] === 'longo' ? 'longo' : 'curto';
+      }
       return ok(
         comAcontecimento(
-          { tipo: 'acampou' },
-          { posicao: estado.posicao, relogio: fimDoAcampamento(estado.relogio, viagem), viajadoHoje: 0 },
+          { tipo: 'descansou', descanso: acao.descanso, lugar: acao.lugar, nomeDoLugar: acao.nomeDoLugar?.trim() ?? '' },
+          {
+            posicao: estado.posicao,
+            relogio: longo
+              ? fimDoDescansoLongo(estado.relogio, viagem)
+              : estado.relogio + Math.round(viagem.horasDeDescansoCurto * 60),
+            viajadoHoje: longo ? 0 : estado.viajadoHoje,
+            descansosPendentes: pendentes,
+          },
         ),
       );
+    }
+
+    case 'ConcluirDescanso':
+      if (!(acao.fichaId in estado.descansosPendentes)) {
+        return ok(estado);
+      }
+      return ok({ ...estado, descansosPendentes: semChavePendente(estado.descansosPendentes, acao.fichaId) });
 
     case 'AvancarTempo': {
       const minutos = Math.round(acao.minutos);

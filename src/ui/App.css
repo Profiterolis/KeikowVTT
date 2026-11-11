@@ -2775,3 +2775,35 @@ fieldset.formulario {
   color: #f0c870;
   font-size: 15px;
 }
+
+.barra-grupo button.barra-grupo-descanso {
+  border-color: #8e7cc3;
+  color: #c9b8ff;
+}
+
+.painel-grupo-pendente {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  color: #c9b8ff;
+  font-size: 11px;
+}
+
+.painel-grupo-pendente button {
+  padding: 1px 6px;
+  font-size: 11px;
+}
+
+.painel-grupo-texto {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+  padding: 4px 8px;
+  border: 1px solid #333846;
+  border-radius: 4px;
+  background: #14161c;
+  color: #e6e3da;
+  font: inherit;
+  font-size: 12px;
+}

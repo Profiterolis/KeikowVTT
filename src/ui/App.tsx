@@ -828,6 +828,10 @@ function Editor({
             viagem={regras.viagem}
             mestre={!modoJogador}
             painelAberto={painelGrupoAberto}
+            descansoPendente={Object.keys(grupo.descansosPendentes).some(
+              (id) => membrosPresentes(grupo, contextoGrupo).includes(id) && fichas.fichas[id]?.donoId === agindoComoId,
+            )}
+            aoIrAteOGrupo={() => cenaRef.current?.centralizarNoGrupo()}
             aoAlternarPainel={() => {
               // O painel do grupo e o do hex ocupam o mesmo lugar: um fecha o outro.
               setHexSelecionado(null);
