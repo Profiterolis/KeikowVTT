@@ -2807,3 +2807,55 @@ fieldset.formulario {
   font: inherit;
   font-size: 12px;
 }
+
+/* Tags de cada tile, na seção Viagem das Regras. */
+.regras-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px;
+}
+
+.regras-tile {
+  padding: 8px 10px;
+  border: 1px solid #333846;
+  border-radius: 6px;
+  background: #1d2029;
+  font-size: 13px;
+}
+
+.regras-tile-cabecalho {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.regras-tile-total {
+  color: #f0c870;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.regras-tile-escolha {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 6px;
+  color: #b9bcc6;
+  font-size: 12px;
+}
+
+.regras-tile-escolha button {
+  padding: 2px 8px;
+  border: 1px solid #333846;
+  border-radius: 4px;
+  background: #2a2e3a;
+  color: #e6e3da;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+
+.regras-tile-mao {
+  color: #c9b8ff;
+}

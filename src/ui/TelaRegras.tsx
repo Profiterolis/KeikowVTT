@@ -20,6 +20,8 @@ import { REGRAS_PADRAO } from '../core/regrasPadrao';
 import { CampoFormula, CampoLinhas, CampoNumero, CampoTexto } from './camposFormulario';
 import { comSinal, ExplicacaoValor, type Explicando } from './ExplicacaoValor';
 import { numeroNaTela } from './numeros';
+import type { Manifesto } from '../core/manifesto';
+import { SecaoViagemRegras } from './SecaoViagemRegras';
 
 interface TelaRegrasProps {
   readonly lojaRegras: LojaRegras;
@@ -27,6 +29,8 @@ interface TelaRegrasProps {
   readonly lojaCompendio: LojaCompendio;
   readonly agindoComoId: string;
   readonly seletorAgindoComo: ReactNode;
+  /** Para a seção Viagem listar os tiles e as tags de cada um. */
+  readonly manifesto: Manifesto | null;
   readonly aoFechar: () => void;
 }
 
@@ -40,7 +44,7 @@ function problemaCom(regras: Regras): string | null {
  * As regras da campanha: nomes dos atributos, fórmulas, perícias e valores da ficha.
  * Só o mestre muda; os jogadores leem. Uma mudança com problema não chega às fichas.
  */
-export function TelaRegras({ lojaRegras, lojaFichas, lojaCompendio, agindoComoId, seletorAgindoComo, aoFechar }: TelaRegrasProps) {
+export function TelaRegras({ lojaRegras, lojaFichas, lojaCompendio, agindoComoId, seletorAgindoComo, manifesto, aoFechar }: TelaRegrasProps) {
   const regras = useSyncExternalStore(lojaRegras.assinar, lojaRegras.obterEstado);
   const fichas = useSyncExternalStore(lojaFichas.assinar, lojaFichas.obterEstado);
   const podeDesfazer = useSyncExternalStore(lojaRegras.assinar, lojaRegras.podeDesfazer);
@@ -251,6 +255,8 @@ export function TelaRegras({ lojaRegras, lojaFichas, lojaCompendio, agindoComoId
 
           <SecaoCriacao regras={regras} editar={editar} mestre={mestre} />
 
+          <SecaoViagemRegras regras={regras} editar={editar} mestre={mestre} manifesto={manifesto} />
+
           <section className="ficha-secao">
             <h3>Atributos</h3>
             <div className="formulario">
@@ -382,7 +388,7 @@ export function TelaRegras({ lojaRegras, lojaFichas, lojaCompendio, agindoComoId
 }
 
 /** Um campo para o nome e o botão de criar: o nome interno sai deste nome. */
-function CriarNovo({ rotulo, dica, aoCriar }: { readonly rotulo: string; readonly dica: string; readonly aoCriar: (nome: string) => void }) {
+export function CriarNovo({ rotulo, dica, aoCriar }: { readonly rotulo: string; readonly dica: string; readonly aoCriar: (nome: string) => void }) {
   const [nome, setNome] = useState('');
   return (
     <form

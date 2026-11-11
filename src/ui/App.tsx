@@ -906,6 +906,7 @@ function Editor({
           lojaCompendio={lojaCompendio}
           agindoComoId={agindoComoId}
           seletorAgindoComo={seletorAgindoComo}
+          manifesto={manifesto}
           aoFechar={() => setTelaAberta(null)}
         />
       )}
