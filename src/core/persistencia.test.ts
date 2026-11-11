@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { APARENCIA_PADRAO, type AparenciaOculta } from './aparencia';
-import { GRUPO_SEM_POSICAO, type EstadoGrupo } from './grupo';
+import { GRUPO_SEM_POSICAO, type AcontecimentoDaViagem, type EstadoGrupo } from './grupo';
 import { aplicarAcao, criarMapaVazio, type EstadoMapa } from './mapa';
 import type { Manifesto } from './manifesto';
 import { assetsDesconhecidos, desserializarMapa, serializarMapa } from './persistencia';
@@ -110,7 +110,15 @@ describe('o grupo no arquivo (versão 4)', () => {
       {
         id: 2,
         autorId: 'j1',
-        acontecimento: { tipo: 'passo', de: { q: 0, r: 0 }, para: { q: 1, r: 0 }, minutos: 90, ritmo: 'rapido', tags: ['campo'] },
+        acontecimento: {
+          tipo: 'passo',
+          de: { q: 0, r: 0 },
+          para: { q: 1, r: 0 },
+          minutos: 90,
+          ritmo: 'rapido',
+          tags: ['campo'],
+          conta: [{ texto: 'Ritmo rápido: 9 km a 6 km/h', valor: 1.5, tipo: 'base' }],
+        },
         antes: { posicao: { q: 0, r: 0 }, relogio: 1910, viajadoHoje: 0 },
         relogioDepois: 2000,
       },
@@ -133,6 +141,13 @@ describe('o grupo no arquivo (versão 4)', () => {
       estado: criarMapaVazio(),
       grupo: grupoCompleto,
     });
+  });
+
+  it('um passo gravado antes da conta abre sem ela', () => {
+    const { conta: _c, ...semConta } = grupoCompleto.historico[0].acontecimento as Extract<AcontecimentoDaViagem, { tipo: 'passo' }>;
+    const antigo = { ...grupoCompleto, historico: [{ ...grupoCompleto.historico[0], acontecimento: semConta }] };
+    const resultado = desserializarMapa(arquivo({ versao: 4, aparenciaOculta: APARENCIA_PADRAO, grupo: antigo, hexes: [] }));
+    expect(resultado.ok && resultado.grupo.historico[0].acontecimento).toEqual(semConta);
   });
 
   it('um grupo gravado antes da visão extra ganha uma vazia', () => {

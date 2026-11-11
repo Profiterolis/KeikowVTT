@@ -5,7 +5,7 @@
  */
 import { formatarDuracao, formatarRelogio, MINUTOS_POR_DIA, type EntradaDaViagem } from './grupo';
 import type { CoordHex } from './hex';
-import type { RegrasDeViagem } from './viagem';
+import type { ParteDoTempo, RegrasDeViagem } from './viagem';
 
 export type CategoriaDoDiario = 'passos' | 'descansos' | 'tempo' | 'posicionamentos' | 'anotacoes';
 
@@ -64,6 +64,20 @@ function intervalo(inicio: number, fim: number): string {
   return `${horaDoDia(inicio)} → ${diaDe(fim) === diaDe(inicio) ? horaDoDia(fim) : formatarRelogio(fim)}`;
 }
 
+const numero = (n: number) => String(Number(n.toFixed(2))).replace('.', ',');
+
+/** Uma parte da conta, como na explicação do passo; a base fica de fora (o ritmo já aparece). */
+function textoDaParte(parte: ParteDoTempo): string | null {
+  if (parte.tipo === 'base') {
+    return null;
+  }
+  if (parte.tipo === 'velocidade') {
+    return `${parte.texto}: velocidade ×${numero(parte.valor)}`;
+  }
+  // "Floresta, sem penalidade (guia: Lyra)" já diz tudo; o ×1 não acrescenta nada.
+  return parte.valor === 1 ? parte.texto : `${parte.texto} ×${numero(parte.valor)}`;
+}
+
 /** "Floresta Sombria (2, -1)" ou só "(2, -1)" num hex sem nome. */
 export function rotuloDoHex(coord: CoordHex, nome: string): string {
   const posicao = `(${coord.q}, ${coord.r})`;
@@ -81,8 +95,12 @@ export function linhaDoDiario(entrada: EntradaDaViagem, nomes: NomesDoDiario): L
   switch (a.tipo) {
     case 'passo': {
       const ritmo = nomes.viagem.ritmos.find((r) => r.id === a.ritmo)?.nome ?? a.ritmo;
-      // Só as tags que mudaram o tempo: "Campo ×1" não explica nada.
-      const tags = a.tags.flatMap((id) => {
+      // Com a conta guardada, vale o que de fato pesou (guias, montarias, veículos).
+      // Passos antigos só têm as tags: só as que mudaram o tempo, sem "Campo ×1".
+      const partes = a.conta
+        ? a.conta.map(textoDaParte).filter((t): t is string => t !== null)
+        : null;
+      const tags = partes ?? a.tags.flatMap((id) => {
         const tag = nomes.viagem.tags.find((t) => t.id === id);
         if (!tag) {
           return [id];

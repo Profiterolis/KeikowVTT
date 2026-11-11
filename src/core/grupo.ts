@@ -47,6 +47,11 @@ export type AcontecimentoDaViagem =
       readonly ritmo: string;
       /** As tags do hex de onde o grupo saiu, que decidiram o tempo. */
       readonly tags: readonly string[];
+      /**
+       * A conta que deu o tempo, como na explicação do passo: guias, montarias e veículos.
+       * Passos gravados antes dela não a têm; o diário usa as tags.
+       */
+      readonly conta?: readonly ParteDoTempo[];
     }
   | { readonly tipo: 'posicionou'; readonly para: CoordHex | null }
   | {
@@ -617,6 +622,7 @@ export function aplicarAcaoGrupo(
             minutos,
             ritmo: estado.ritmo,
             tags: passo.tagsDaOrigem.map((t) => t.id),
+            conta: passo.partes,
           },
           { posicao: acao.para, relogio: estado.relogio + minutos, viajadoHoje: estado.viajadoHoje + minutos },
         ),

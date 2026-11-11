@@ -87,6 +87,25 @@ describe('diário de viagem', () => {
     expect(texto).toContain('10:00 → 14:00  Andou de Bosque Velho (1, 0) para (2, 0) (4 h · ritmo normal · Floresta ×2) [Mestre]');
   });
 
+  it('com a conta guardada, mostra o que pesou: guia sem o ×2, veículo com a velocidade', () => {
+    const [entrada] = viagem.historico.filter((e) => e.acontecimento.tipo === 'passo').slice(1);
+    const comConta = {
+      ...entrada,
+      acontecimento: {
+        ...entrada.acontecimento,
+        conta: [
+          { texto: 'Ritmo normal: 9 km a 4,5 km/h', valor: 2, tipo: 'base' as const },
+          { texto: 'Veículo de Guia, onde cabem todos', valor: 1.25, tipo: 'velocidade' as const },
+          { texto: 'Floresta, sem penalidade (guia: Lyra)', valor: 1, tipo: 'multiplicador' as const },
+        ],
+      },
+    };
+    const [dia] = diarioPorDias([comConta], nomes);
+    expect(dia.linhas[0].detalhe).toBe(
+      '4 h · ritmo normal · Veículo de Guia, onde cabem todos: velocidade ×1,25 · Floresta, sem penalidade (guia: Lyra)',
+    );
+  });
+
   it('um hex sem nome aparece só com a posição', () => {
     expect(rotuloDoHex({ q: 3, r: -2 }, '  ')).toBe('(3, -2)');
   });

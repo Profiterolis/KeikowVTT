@@ -15,6 +15,7 @@ import { chaveHex, type ChaveHex } from './hex';
 import type { Manifesto } from './manifesto';
 import { INFORMACAO_VAZIA, type Decoracao, type EstadoMapa, type Hex, type Nota } from './mapa';
 import { paraJogadores, SO_MESTRE, VISIVEL_A_TODOS, type Visibilidade } from './visibilidade';
+import type { ParteDoTempo } from './viagem';
 
 /** Aumente ao mudar o formato do arquivo, para poder converter mapas antigos. */
 const VERSAO_ARQUIVO = 4;
@@ -153,12 +154,33 @@ function lerPendentes(dado: unknown, onde: string): Record<string, TipoDeDescans
   return dado as Record<string, TipoDeDescanso>;
 }
 
+/** A conta de um passo, gravada a partir do diário de viagem; passos de antes não a têm. */
+function lerConta(dado: unknown, onde: string): ParteDoTempo[] | undefined {
+  if (dado === undefined) {
+    return undefined;
+  }
+  exigir(
+    Array.isArray(dado) &&
+      dado.every(
+        (p) =>
+          ehObjeto(p) &&
+          typeof p.texto === 'string' &&
+          typeof p.valor === 'number' &&
+          Number.isFinite(p.valor) &&
+          (p.tipo === 'base' || p.tipo === 'multiplicador' || p.tipo === 'velocidade'),
+      ),
+    `${onde}: a conta do passo é inválida.`,
+  );
+  return (dado as ParteDoTempo[]).map(({ texto, valor, tipo }) => ({ texto, valor, tipo }));
+}
+
 function lerAcontecimento(dado: unknown, onde: string): AcontecimentoDaViagem {
   exigir(ehObjeto(dado), `${onde} está sem o acontecimento.`);
   switch (dado.tipo) {
     case 'passo':
       exigir(typeof dado.ritmo === 'string', `${onde}: o ritmo é inválido.`);
       exigir(Array.isArray(dado.tags) && dado.tags.every((t) => typeof t === 'string'), `${onde}: as tags são inválidas.`);
+      const conta = lerConta(dado.conta, onde);
       return {
         tipo: 'passo',
         de: lerCoord(dado.de, `${onde}: a origem`),
@@ -166,6 +188,7 @@ function lerAcontecimento(dado: unknown, onde: string): AcontecimentoDaViagem {
         minutos: minutos(dado.minutos, `${onde}: o tempo do passo`),
         ritmo: dado.ritmo,
         tags: dado.tags as string[],
+        ...(conta ? { conta } : {}),
       };
     case 'posicionou':
       return { tipo: 'posicionou', para: lerCoordOuNada(dado.para, `${onde}: a posição`) };

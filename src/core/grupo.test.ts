@@ -118,10 +118,30 @@ describe('andar', () => {
       {
         id: 1,
         autorId: 'j-ana',
-        acontecimento: { tipo: 'passo', de: A, para: B, minutos: 120, ritmo: 'normal', tags: ['campo'] },
+        acontecimento: {
+          tipo: 'passo',
+          de: A,
+          para: B,
+          minutos: 120,
+          ritmo: 'normal',
+          tags: ['campo'],
+          conta: [{ texto: 'Ritmo normal: 9 km a 4,5 km/h', valor: 2, tipo: 'base' }],
+        },
         antes: { posicao: A, relogio: hora(1, 8), viajadoHoje: 0 },
         relogioDepois: hora(1, 10),
       },
+    ]);
+  });
+
+  it('a conta do passo guarda o guia que tirou a penalidade', () => {
+    valores = { bia: { guia_floresta: 1 } };
+    const naFloresta = aplicar(viajando, { tipo: 'MoverGrupo', para: B });
+    const saiu = aplicar(naFloresta, { tipo: 'MoverGrupo', para: C });
+    const passo = saiu.historico.at(-1)?.acontecimento;
+    expect(passo?.tipo === 'passo' && passo.minutos).toBe(120);
+    expect(passo?.tipo === 'passo' && passo.conta?.map((p) => p.texto)).toEqual([
+      'Ritmo normal: 9 km a 4,5 km/h',
+      'Floresta, sem penalidade (guia: bia)',
     ]);
   });
 
