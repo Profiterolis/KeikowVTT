@@ -19,8 +19,9 @@ import { criarCamadaGrid, criarDestaqueHex, criarSelecaoHex } from './camadaGrid
 import {
   criarCamadaMarcadores,
   criarContornoRevelados,
-  criarMarcadorGrupo,
 } from './camadaMarcadores';
+import { criarCamadaGrupo, type CabecaDoGrupo } from './camadaGrupo';
+import { trilhaDoGrupo, type PassoPossivel } from '../core/grupo';
 import { criarCamadaTiles } from './camadaTiles';
 
 const ZOOM_MINIMO = 0.15;
@@ -48,6 +49,8 @@ export interface OpcoesCena {
   readonly aoTerminarTraco: () => void;
   /** O botão esquerdo foi apertado e solto neste ponto, sem arrastar. Vem após `aoTerminarTraco`. */
   readonly aoClicar: (ponto: PontoMundo) => void;
+  /** Os membros do grupo, para as cabeças no token. */
+  readonly obterCabecasDoGrupo: () => readonly CabecaDoGrupo[];
 }
 
 interface ControlesCena {
@@ -62,9 +65,18 @@ interface ControlesCena {
   selecionarHex(coord: CoordHex | null): void;
   /** Liga ou desliga o escurecimento dos hexes que os jogadores não veriam. */
   definirConferenciaDeVisao(ativa: boolean): void;
-  /** Passa a desenhar o mapa exatamente como este jogador o veria; `null` volta ao modo mestre. */
-  /** `alcance` é até onde aquele jogador enxerga no mapa (1 são os vizinhos). */
+  /**
+   * Passa a desenhar o mapa exatamente como este jogador o veria; `null` volta ao modo mestre.
+   * `alcance` é até onde aquele jogador enxerga no mapa (1 são os vizinhos).
+   */
   definirModoJogador(participanteId: string | null, alcance?: number): void;
+  /** Os custos dos passos nos vizinhos do grupo; `null` esconde. */
+  mostrarPassos(passos: readonly PassoPossivel[] | null, destaque: CoordHex | null): void;
+  marcarGrupoSelecionado(selecionado: boolean): void;
+  /** O token acompanha o mouse; `null` o devolve ao hex do grupo. */
+  moverTokenVisual(ponto: PontoMundo | null): void;
+  /** Redesenha o token, por exemplo quando um membro muda de nome. */
+  atualizarGrupo(): void;
   cancelarAssinatura(): void;
 }
 
@@ -120,6 +132,10 @@ export function createMapScene(container: HTMLElement, opcoes: OpcoesCena): Cena
     selecionarHex: (coord) => controles?.selecionarHex(coord),
     definirConferenciaDeVisao: (ativa) => controles?.definirConferenciaDeVisao(ativa),
     definirModoJogador: (participanteId, alcance) => controles?.definirModoJogador(participanteId, alcance),
+    mostrarPassos: (passos, destaque) => controles?.mostrarPassos(passos, destaque),
+    marcarGrupoSelecionado: (selecionado) => controles?.marcarGrupoSelecionado(selecionado),
+    moverTokenVisual: (ponto) => controles?.moverTokenVisual(ponto),
+    atualizarGrupo: () => controles?.atualizarGrupo(),
     destruir() {
       disposed = true;
       controles?.cancelarAssinatura();
@@ -163,7 +179,7 @@ function montarCena(app: Application, catalogo: Catalogo, opcoes: OpcoesCena): C
   const decoracoes = criarCamadaDecoracoes(catalogo, tiles.container);
   const marcadores = criarCamadaMarcadores();
   const contornoRevelados = criarContornoRevelados();
-  const marcadorGrupo = criarMarcadorGrupo();
+  const grupo = criarCamadaGrupo(app.ticker);
   const selecao = criarSelecaoHex();
   const destaque = criarDestaqueHex();
   camera.addChild(
@@ -174,9 +190,12 @@ function montarCena(app: Application, catalogo: Catalogo, opcoes: OpcoesCena): C
     fundoOculto.frente,
     contornoRevelados.grafico,
     marcadores.grafico,
-    marcadorGrupo.grafico,
+    grupo.trilha,
+    grupo.passos,
+    grupo.selecao,
     selecao.grafico,
     destaque.grafico,
+    grupo.token,
   );
 
   let conferindoVisao = false;
@@ -186,7 +205,8 @@ function montarCena(app: Application, catalogo: Catalogo, opcoes: OpcoesCena): C
 
   const atualizarCamadas = () => {
     const estadoDoMestre = opcoes.loja.obterEstado();
-    const { posicao } = opcoes.lojaGrupo.obterEstado();
+    const estadoGrupo = opcoes.lojaGrupo.obterEstado();
+    const { posicao } = estadoGrupo;
     // No modo jogador, todas as camadas desenham só a visão filtrada: o que está oculto não chega aqui.
     const modoJogador = jogadorId !== null;
     const estado = modoJogador
@@ -197,7 +217,10 @@ function montarCena(app: Application, catalogo: Catalogo, opcoes: OpcoesCena): C
     tiles.atualizar(estado);
     decoracoes.atualizar(estado);
     marcadores.atualizar(estado);
-    marcadorGrupo.atualizar(posicao);
+    grupo.atualizar(posicao);
+    grupo.definirCabecas(opcoes.obterCabecasDoGrupo());
+    // A trilha é só do mestre: no modo jogador, ela some.
+    grupo.atualizarTrilha(modoJogador ? null : trilhaDoGrupo(estadoGrupo));
     contornoRevelados.atualizar(estado, conferir);
 
     const ocultos = conferir ? chavesOcultas(estado, posicao) : null;
@@ -347,6 +370,10 @@ function montarCena(app: Application, catalogo: Catalogo, opcoes: OpcoesCena): C
       conferindoVisao = ativa;
       atualizarCamadas();
     },
+    mostrarPassos: grupo.mostrarPassos,
+    marcarGrupoSelecionado: grupo.marcarSelecionado,
+    moverTokenVisual: grupo.moverVisual,
+    atualizarGrupo: atualizarCamadas,
     definirModoJogador: (participanteId, alcance = 1) => {
       jogadorId = participanteId;
       alcanceDoJogador = alcance;

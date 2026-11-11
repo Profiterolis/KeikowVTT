@@ -31,6 +31,7 @@ const DESCRICOES: Readonly<Record<TipoEvento, (quantidade: number) => string>> =
   DefinirLider: fixo('mudou o líder do grupo'),
   DefinirRitmo: fixo('mudou o ritmo do grupo'),
   DefinirVisaoExtra: fixo('mudou a visão extra de um membro do grupo'),
+  TravarMovimento: fixo('travou ou destravou o movimento do grupo'),
   Acampar: fixo('fez o grupo acampar'),
   AvancarTempo: fixo('avançou o tempo'),
   AvancarAteAManha: fixo('avançou o tempo até a manhã'),

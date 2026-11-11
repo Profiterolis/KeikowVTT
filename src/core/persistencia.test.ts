@@ -95,6 +95,7 @@ describe('o grupo no arquivo (versão 4)', () => {
     relogio: 2000,
     viajadoHoje: 90,
     visaoExtra: { f2: 2 },
+    movimentoTravado: true,
     historico: [
       {
         id: 1,
@@ -125,9 +126,10 @@ describe('o grupo no arquivo (versão 4)', () => {
   });
 
   it('um grupo gravado antes da visão extra ganha uma vazia', () => {
-    const { visaoExtra: _v, ...antigo } = grupoCompleto;
+    const { visaoExtra: _v, movimentoTravado: _m, ...antigo } = grupoCompleto;
     const resultado = desserializarMapa(arquivo({ versao: 4, aparenciaOculta: APARENCIA_PADRAO, grupo: antigo, hexes: [] }));
     expect(resultado.ok && resultado.grupo.visaoExtra).toEqual({});
+    expect(resultado.ok && resultado.grupo.movimentoTravado).toBe(false);
   });
 
   it('um mapa da versão 3 mantém a posição do grupo e ganha o resto padrão', () => {

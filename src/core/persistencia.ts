@@ -208,6 +208,11 @@ function lerGrupo(dado: unknown): EstadoGrupo {
     viajadoHoje: minutos(dado.viajadoHoje, 'O tempo viajado hoje'),
     historico: dado.historico.map(lerEntradaDaViagem),
     visaoExtra: lerVisaoExtra(dado.visaoExtra),
+    // Gravado a partir da trava do movimento; grupos de antes não o têm.
+    movimentoTravado: (() => {
+      exigir(dado.movimentoTravado === undefined || typeof dado.movimentoTravado === 'boolean', 'A trava do movimento é inválida.');
+      return dado.movimentoTravado === true;
+    })(),
   };
 }
 

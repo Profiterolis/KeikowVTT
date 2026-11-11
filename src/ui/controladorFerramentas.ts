@@ -1,5 +1,5 @@
 import { hexParaMundo, mundoParaHex, type CoordHex, type PontoMundo } from '../core/hex';
-import type { LojaGrupo } from '../core/grupo';
+import type { LojaGrupo, PassoPossivel } from '../core/grupo';
 import type { LojaMapa } from '../core/loja';
 import { hexEm, temAnotacoes } from '../core/mapa';
 import type { Manifesto } from '../core/manifesto';
@@ -24,7 +24,29 @@ type CenaControlada = Pick<
   | 'decoracaoEm'
   | 'moverDecoracaoVisual'
   | 'sincronizarDecoracoes'
+  | 'mostrarPassos'
+  | 'marcarGrupoSelecionado'
+  | 'moverTokenVisual'
 >;
+
+/** O que o controle precisa saber para mover o grupo pelo token. */
+export interface OpcoesDoToken {
+  /** Quem está agindo pode mover o grupo agora (o mestre, ou o líder sem a trava). */
+  readonly podeConduzir: () => boolean;
+  /** Os vizinhos do grupo, com o custo de cada passo. */
+  readonly passos: () => readonly PassoPossivel[];
+  /** O vizinho sob o mouse mudou: a tela mostra a explicação do custo. */
+  readonly aoMudarPasso: (passo: PassoPossivel | null) => void;
+}
+
+const SEM_TOKEN: OpcoesDoToken = { podeConduzir: () => false, passos: () => [], aoMudarPasso: () => undefined };
+
+/** A área clicável do token: o estandarte sobe a partir do centro do hex. */
+function noToken(ponto: PontoMundo, centro: PontoMundo): boolean {
+  const dx = ponto.x - centro.x;
+  const dy = ponto.y - centro.y;
+  return Math.abs(dx) <= 60 && dy >= -130 && dy <= 35;
+}
 
 interface Movimento {
   readonly decoracaoId: string;
@@ -43,6 +65,7 @@ export function criarControlador(
   obterCena: () => CenaControlada | null,
   aoSelecionarHex: (coord: CoordHex) => void,
   aoAvisar: (texto: string) => void,
+  token: OpcoesDoToken = SEM_TOKEN,
 ) {
   const assets = new Map(manifesto.assets.map((asset) => [asset.id, asset]));
   let ferramenta: Ferramenta = SEM_FERRAMENTA;
@@ -57,6 +80,59 @@ export function criarControlador(
   // No modo jogador: até onde aquele jogador enxerga, para só abrir hexes ao alcance dele.
   let alcanceDaVisao = 1;
   const ehEdicaoDoMapa = (f: Ferramenta) => f.tipo === 'colocar' || f.tipo === 'apagar';
+
+  // ---------- O token do grupo: clicar e depois clicar no vizinho, ou arrastar ----------
+  let grupoSelecionado = false;
+  /** Enquanto o token está sendo arrastado: o último ponto (`null` até o mouse se mover). */
+  let arrasteDoGrupo: { ponto: PontoMundo | null } | null = null;
+  let cliqueNoToken = false;
+  let destaqueDoPasso: CoordHex | null = null;
+
+  const mesmoHex = (a: CoordHex | null, b: CoordHex | null) => a?.q === b?.q && a?.r === b?.r;
+
+  /** O token só reage sem ferramenta, para quem pode conduzir o grupo. */
+  const podeMexerNoToken = (ponto: PontoMundo) => {
+    const { posicao } = lojaGrupo.obterEstado();
+    return ferramenta.tipo === 'nenhuma' && posicao !== null && token.podeConduzir() && noToken(ponto, hexParaMundo(posicao));
+  };
+
+  const mostrarPassos = (destaque: CoordHex | null) => {
+    destaqueDoPasso = destaque;
+    const passos = token.passos();
+    obterCena()?.mostrarPassos(passos, destaque);
+    token.aoMudarPasso(passos.find((p) => mesmoHex(p.coord, destaque)) ?? null);
+  };
+
+  const esconderPassos = () => {
+    destaqueDoPasso = null;
+    obterCena()?.mostrarPassos(null, null);
+    obterCena()?.marcarGrupoSelecionado(false);
+    token.aoMudarPasso(null);
+  };
+
+  const desmarcarGrupo = () => {
+    grupoSelecionado = false;
+    if (arrasteDoGrupo) {
+      arrasteDoGrupo = null;
+      obterCena()?.moverTokenVisual(null);
+    }
+    esconderPassos();
+  };
+
+  /** Anda para um vizinho. Avisa a marcha forçada; a recusa (água, trava) chega pelo registro. */
+  const andar = (destino: CoordHex) => {
+    const passo = token.passos().find((p) => mesmoHex(p.coord, destino));
+    if (!passo) {
+      return;
+    }
+    if (!passo.ok) {
+      aoAvisar(passo.motivo);
+      return;
+    }
+    if (lojaGrupo.despachar({ tipo: 'MoverGrupo', para: destino }) && passo.marchaForcada) {
+      aoAvisar('Marcha forçada: o grupo passou das horas de viagem de hoje.');
+    }
+  };
 
   const removerHex = (coord: CoordHex) => {
     const hex = hexEm(loja.obterEstado(), coord);
@@ -184,11 +260,31 @@ export function criarControlador(
   return {
     definirFerramenta(nova: Ferramenta) {
       ferramenta = travado && ehEdicaoDoMapa(nova) ? SEM_FERRAMENTA : nova;
+      if (ferramenta.tipo !== 'nenhuma') {
+        desmarcarGrupo();
+      }
       obterCena()?.limparPrevia();
     },
 
     definirAlcanceDaVisao(alcance: number) {
       alcanceDaVisao = alcance;
+    },
+
+    /** O grupo está selecionado (Esc desmarca antes de qualquer outra coisa). */
+    grupoSelecionado: () => grupoSelecionado || arrasteDoGrupo !== null,
+    desmarcarGrupo,
+
+    /** O grupo mudou (andou, travou, trocou de líder): os custos e a seleção acompanham. */
+    aoMudarGrupo() {
+      if (!grupoSelecionado) {
+        return;
+      }
+      if (!lojaGrupo.obterEstado().posicao || !token.podeConduzir()) {
+        desmarcarGrupo();
+        return;
+      }
+      obterCena()?.marcarGrupoSelecionado(true);
+      mostrarPassos(destaqueDoPasso);
     },
 
     /** Ao travar, solta as ferramentas que mudam o mapa e para de arrastar decorações. */
@@ -209,6 +305,7 @@ export function criarControlador(
     /** Ao ligar, solta a ferramenta atual e passa a ignorar edições. */
     definirSomenteLeitura(ativo: boolean) {
       somenteLeitura = ativo;
+      desmarcarGrupo();
       if (ativo) {
         ferramenta = SEM_FERRAMENTA;
         movimento = null;
@@ -220,6 +317,12 @@ export function criarControlador(
     mostrarPrevia,
 
     aoMoverPonteiro(ponto: PontoMundo | null) {
+      if (grupoSelecionado && !arrasteDoGrupo) {
+        const hex = ponto ? mundoParaHex(ponto) : null;
+        if (!mesmoHex(hex, destaqueDoPasso)) {
+          mostrarPassos(hex);
+        }
+      }
       if (ponto && ferramenta.tipo === 'colocar' && !travado) {
         mostrarPrevia(ferramenta.assetId, ponto);
       } else {
@@ -228,6 +331,11 @@ export function criarControlador(
     },
 
     aoIniciarTraco(ponto: PontoMundo) {
+      // O token vem antes de tudo: até no modo jogador o líder conduz o grupo.
+      if (podeMexerNoToken(ponto)) {
+        arrasteDoGrupo = { ponto: null };
+        return;
+      }
       if (somenteLeitura) {
         return;
       }
@@ -279,6 +387,18 @@ export function criarControlador(
     },
 
     aoMoverDuranteTraco(ponto: PontoMundo) {
+      if (arrasteDoGrupo) {
+        if (!arrasteDoGrupo.ponto) {
+          obterCena()?.marcarGrupoSelecionado(true);
+        }
+        arrasteDoGrupo.ponto = ponto;
+        obterCena()?.moverTokenVisual(ponto);
+        const hex = mundoParaHex(ponto);
+        if (!mesmoHex(hex, destaqueDoPasso) || !grupoSelecionado) {
+          mostrarPassos(hex);
+        }
+        return;
+      }
       if (somenteLeitura) {
         return;
       }
@@ -294,6 +414,28 @@ export function criarControlador(
     },
 
     aoTerminarTraco() {
+      if (arrasteDoGrupo) {
+        const solto = arrasteDoGrupo.ponto;
+        arrasteDoGrupo = null;
+        if (!solto) {
+          // Foi um clique no token: quem decide é o aoClicar, que vem logo depois.
+          cliqueNoToken = true;
+          return;
+        }
+        // Soltar num vizinho anda; em qualquer outro lugar, o token volta.
+        const destino = mundoParaHex(solto);
+        if (!mesmoHex(destino, lojaGrupo.obterEstado().posicao)) {
+          andar(destino);
+        }
+        obterCena()?.moverTokenVisual(null);
+        if (grupoSelecionado) {
+          obterCena()?.marcarGrupoSelecionado(true);
+          mostrarPassos(null);
+        } else {
+          esconderPassos();
+        }
+        return;
+      }
       if (movimento) {
         concluirMovimento(movimento);
         movimento = null;
@@ -305,6 +447,26 @@ export function criarControlador(
 
     aoClicar(ponto: PontoMundo) {
       const coord = mundoParaHex(ponto);
+      if (cliqueNoToken) {
+        cliqueNoToken = false;
+        grupoSelecionado = !grupoSelecionado;
+        if (grupoSelecionado) {
+          obterCena()?.marcarGrupoSelecionado(true);
+          mostrarPassos(coord);
+        } else {
+          esconderPassos();
+        }
+        return;
+      }
+      if (grupoSelecionado) {
+        // Com o grupo selecionado, um vizinho anda; qualquer outro clique só desmarca.
+        if (token.passos().some((p) => mesmoHex(p.coord, coord))) {
+          andar(coord);
+        } else {
+          desmarcarGrupo();
+        }
+        return;
+      }
       if (somenteLeitura) {
         // O jogador só consegue abrir o que está ao alcance da visão dele.
         const hex = hexEm(loja.obterEstado(), coord);

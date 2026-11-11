@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { criarLojaGrupo } from '../core/grupo';
+import { CONTEXTO_VAZIO, criarLojaGrupo, GRUPO_INICIAL, passosPossiveis } from '../core/grupo';
 import { hexParaMundo } from '../core/hex';
 import { criarLojaMapa } from '../core/loja';
 import { hexEm } from '../core/mapa';
@@ -28,6 +28,9 @@ function montar() {
     decoracaoEm: vi.fn().mockReturnValue(null),
     moverDecoracaoVisual: vi.fn(),
     sincronizarDecoracoes: vi.fn(),
+    mostrarPassos: vi.fn(),
+    marcarGrupoSelecionado: vi.fn(),
+    moverTokenVisual: vi.fn(),
   };
   const aoSelecionarHex = vi.fn();
   const aoAvisar = vi.fn();
@@ -561,5 +564,114 @@ describe('mover decorações', () => {
     controlador.aoTerminarTraco();
     expect(decoracoes(A)).toHaveLength(1);
     expect(cena.sincronizarDecoracoes).toHaveBeenCalled();
+  });
+});
+
+describe('token do grupo', () => {
+  /** Um mapa em linha com o grupo em A; `pode` diz se quem age conduz o grupo. */
+  function comGrupo(pode = true) {
+    const loja = criarLojaMapa();
+    for (const coord of [A, B, { q: 2, r: 0 }]) {
+      loja.despachar({ tipo: 'ColocarTile', coord, terreno: 'tile' });
+    }
+    const contexto = { ...CONTEXTO_VAZIO, obterMapa: loja.obterEstado };
+    const lojaGrupo = criarLojaGrupo({ ...GRUPO_INICIAL, posicao: A }, {}, contexto);
+    const cena = {
+      mostrarPrevia: vi.fn(),
+      mostrarPreviaDecoracao: vi.fn(),
+      limparPrevia: vi.fn(),
+      decoracaoEm: vi.fn().mockReturnValue(null),
+      moverDecoracaoVisual: vi.fn(),
+      sincronizarDecoracoes: vi.fn(),
+      mostrarPassos: vi.fn(),
+      marcarGrupoSelecionado: vi.fn(),
+      moverTokenVisual: vi.fn(),
+    };
+    const aoSelecionarHex = vi.fn();
+    const aoAvisar = vi.fn();
+    const aoMudarPasso = vi.fn();
+    const controlador = criarControlador(loja, lojaGrupo, manifesto, () => cena, aoSelecionarHex, aoAvisar, {
+      podeConduzir: () => pode,
+      passos: () => passosPossiveis(lojaGrupo.obterEstado(), contexto),
+      aoMudarPasso,
+    });
+    const clicar = (ponto: { x: number; y: number }) => {
+      controlador.aoIniciarTraco(ponto);
+      controlador.aoTerminarTraco();
+      controlador.aoClicar(ponto);
+    };
+    return { loja, lojaGrupo, cena, controlador, clicar, aoSelecionarHex, aoAvisar, aoMudarPasso };
+  }
+  const noEstandarte = { x: 0, y: -60 };
+
+  it('clicar no token e depois num vizinho anda, e o grupo continua selecionado', () => {
+    const { lojaGrupo, cena, controlador, clicar, aoSelecionarHex } = comGrupo();
+    clicar(noEstandarte);
+    expect(controlador.grupoSelecionado()).toBe(true);
+    expect(cena.mostrarPassos).toHaveBeenLastCalledWith(expect.any(Array), expect.anything());
+    clicar(centroB);
+    expect(lojaGrupo.obterEstado().posicao).toEqual(B);
+    expect(controlador.grupoSelecionado()).toBe(true);
+    expect(aoSelecionarHex).not.toHaveBeenCalled();
+  });
+
+  it('clicar longe desmarca sem andar; Esc também', () => {
+    const { lojaGrupo, cena, controlador, clicar } = comGrupo();
+    clicar(noEstandarte);
+    clicar(hexParaMundo({ q: 2, r: 0 }));
+    expect(lojaGrupo.obterEstado().posicao).toEqual(A);
+    expect(controlador.grupoSelecionado()).toBe(false);
+    expect(cena.mostrarPassos).toHaveBeenLastCalledWith(null, null);
+    clicar(noEstandarte);
+    controlador.desmarcarGrupo();
+    expect(controlador.grupoSelecionado()).toBe(false);
+  });
+
+  it('arrastar o token até um vizinho anda; soltar longe devolve o token', () => {
+    const { lojaGrupo, cena, controlador } = comGrupo();
+    controlador.aoIniciarTraco(noEstandarte);
+    controlador.aoMoverDuranteTraco(hexParaMundo({ q: 2, r: 0 }));
+    controlador.aoTerminarTraco();
+    expect(lojaGrupo.obterEstado().posicao).toEqual(A);
+    expect(cena.moverTokenVisual).toHaveBeenLastCalledWith(null);
+    controlador.aoIniciarTraco(noEstandarte);
+    controlador.aoMoverDuranteTraco(centroB);
+    controlador.aoTerminarTraco();
+    expect(lojaGrupo.obterEstado().posicao).toEqual(B);
+  });
+
+  it('o mouse sobre um vizinho mostra a conta do passo', () => {
+    const { controlador, clicar, aoMudarPasso } = comGrupo();
+    clicar(noEstandarte);
+    controlador.aoMoverPonteiro(centroB);
+    expect(aoMudarPasso).toHaveBeenLastCalledWith(expect.objectContaining({ coord: B, ok: true, minutos: 120 }));
+  });
+
+  it('quem não conduz o grupo não pega o token: o clique abre o hex, como antes', () => {
+    const { lojaGrupo, controlador, clicar, aoSelecionarHex } = comGrupo(false);
+    clicar(noEstandarte);
+    expect(controlador.grupoSelecionado()).toBe(false);
+    expect(aoSelecionarHex).toHaveBeenCalledWith(A);
+    controlador.aoIniciarTraco(noEstandarte);
+    controlador.aoMoverDuranteTraco(centroB);
+    controlador.aoTerminarTraco();
+    expect(lojaGrupo.obterEstado().posicao).toEqual(A);
+  });
+
+  it('funciona no modo jogador e com o mapa travado', () => {
+    const { lojaGrupo, controlador, clicar } = comGrupo();
+    controlador.definirSomenteLeitura(true);
+    controlador.definirTravado(true);
+    clicar(noEstandarte);
+    clicar(centroB);
+    expect(lojaGrupo.obterEstado().posicao).toEqual(B);
+  });
+
+  it('com uma ferramenta escolhida, o token não reage', () => {
+    const { lojaGrupo, controlador, clicar } = comGrupo();
+    controlador.definirFerramenta({ tipo: 'revelar' });
+    clicar(noEstandarte);
+    expect(controlador.grupoSelecionado()).toBe(false);
+    expect(lojaGrupo.obterEstado().posicao).toEqual(A);
   });
 });

@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   alcanceDaVisao,
   aplicarAcaoGrupo,
+  formatarDuracao,
+  passosPossiveis,
+  podeConduzir,
+  trilhaDoGrupo,
   criarLojaGrupo,
   fimDoAcampamento,
   formatarRelogio,
@@ -345,5 +349,62 @@ describe('visão de cada jogador', () => {
     const loja = criarLojaGrupo(viajando, { obterAutorId: () => 'j-ana', aoRecusar: (m) => recusas.push(m) }, contexto);
     expect(loja.despachar({ tipo: 'DefinirVisaoExtra', fichaId: 'ana', extra: 3 })).toBe(false);
     expect(recusas).toEqual(['Só o mestre faz isto no grupo.']);
+  });
+});
+
+describe('trava do movimento', () => {
+  it('com o movimento travado, o líder não anda, mas o mestre sim', () => {
+    const travado = aplicar(viajando, { tipo: 'TravarMovimento', travado: true });
+    const recusas: string[] = [];
+    const doLider = criarLojaGrupo(travado, { obterAutorId: () => 'j-ana', aoRecusar: (m) => recusas.push(m) }, contexto);
+    expect(doLider.despachar({ tipo: 'MoverGrupo', para: B })).toBe(false);
+    expect(recusas).toEqual(['O mestre travou o movimento do grupo.']);
+    expect(aplicar(travado, { tipo: 'MoverGrupo', para: B }).posicao).toEqual(B);
+  });
+
+  it('só o mestre trava e destrava', () => {
+    const doLider = criarLojaGrupo(viajando, { obterAutorId: () => 'j-ana' }, contexto);
+    expect(doLider.despachar({ tipo: 'TravarMovimento', travado: true })).toBe(false);
+    expect(aplicar(viajando, { tipo: 'TravarMovimento', travado: false })).toBe(viajando);
+  });
+
+  it('podeConduzir: o mestre sempre; o líder, se não estiver travado; os outros, nunca', () => {
+    expect(podeConduzir(viajando, 'mestre', contexto)).toBe(true);
+    expect(podeConduzir(viajando, 'j-ana', contexto)).toBe(true);
+    expect(podeConduzir(viajando, 'j-bia', contexto)).toBe(false);
+    expect(podeConduzir({ ...viajando, movimentoTravado: true }, 'j-ana', contexto)).toBe(false);
+  });
+});
+
+describe('passos possíveis e trilha', () => {
+  it('mostra os 6 vizinhos, com o custo ou o motivo', () => {
+    const passos = passosPossiveis(viajando, contexto);
+    expect(passos).toHaveLength(6);
+    const paraB = passos.find((p) => p.coord.q === B.q && p.coord.r === B.r);
+    expect(paraB).toMatchObject({ ok: true, minutos: 120, marchaForcada: false });
+    expect(passos.filter((p) => !p.ok).every((p) => !p.ok && p.motivo.includes('Não há terreno'))).toBe(true);
+    expect(passosPossiveis(GRUPO_INICIAL, contexto)).toEqual([]);
+  });
+
+  it('avisa quando o passo passa das horas de viagem do dia', () => {
+    const cansado = { ...viajando, viajadoHoje: 7 * 60 };
+    const paraB = passosPossiveis(cansado, contexto).find((p) => p.coord.q === B.q && p.coord.r === B.r);
+    expect(paraB).toMatchObject({ ok: true, marchaForcada: true });
+  });
+
+  it('a trilha recomeça quando o mestre posiciona o grupo', () => {
+    let estado = aplicar(viajando, { tipo: 'MoverGrupo', para: B });
+    estado = aplicar(estado, { tipo: 'MoverGrupo', para: C });
+    expect(trilhaDoGrupo(estado)).toEqual([A, B, C]);
+    estado = aplicar(estado, { tipo: 'PosicionarGrupo', coord: LONGE });
+    expect(trilhaDoGrupo(estado)).toEqual([LONGE]);
+    estado = aplicar(estado, { tipo: 'AvancarTempo', minutos: 10 });
+    expect(trilhaDoGrupo(estado)).toEqual([LONGE]);
+  });
+
+  it('formata a duração de um passo', () => {
+    expect(formatarDuracao(120)).toBe('2 h');
+    expect(formatarDuracao(90)).toBe('1 h 30 min');
+    expect(formatarDuracao(45)).toBe('45 min');
   });
 });

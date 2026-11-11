@@ -5,12 +5,18 @@
  * O relógio fica aqui, e não na campanha, porque andar um hex muda a posição e o tempo
  * de uma vez só, e quem move o grupo pode ser um jogador.
  */
-import type { CoordHex } from './hex';
+import { vizinhosHex, type CoordHex } from './hex';
 import { criarMapaVazio, type EstadoMapa } from './mapa';
 import type { Permissao } from './permissoes';
 import { autorDe, criarEmissor, type OpcoesRegistro } from './registro';
 import { ehMestre } from './visibilidade';
-import { REGRAS_DE_VIAGEM_PADRAO, tempoDoPasso, type MembroNaViagem, type RegrasDeViagem } from './viagem';
+import {
+  REGRAS_DE_VIAGEM_PADRAO,
+  tempoDoPasso,
+  type MembroNaViagem,
+  type ParteDoTempo,
+  type RegrasDeViagem,
+} from './viagem';
 
 export const MINUTOS_POR_DIA = 24 * 60;
 
@@ -68,6 +74,8 @@ export interface EstadoGrupo {
    * Só quem controla aquela ficha enxerga mais longe.
    */
   readonly visaoExtra: Readonly<Record<string, number>>;
+  /** O mestre travou o movimento: o líder não anda até ele destravar. */
+  readonly movimentoTravado: boolean;
 }
 
 /** Guarda as últimas entradas: o diário é para consulta, não um arquivo eterno. */
@@ -82,6 +90,7 @@ export const GRUPO_INICIAL: EstadoGrupo = {
   viajadoHoje: 0,
   historico: [],
   visaoExtra: {},
+  movimentoTravado: false,
 };
 
 /** Mesmo nome de antes, para quem só precisa de um grupo vazio. */
@@ -96,6 +105,8 @@ export type AcaoGrupo =
   | { readonly tipo: 'RemoverMembro'; readonly fichaId: string }
   | { readonly tipo: 'DefinirLider'; readonly fichaId: string | null }
   | { readonly tipo: 'DefinirRitmo'; readonly ritmo: string }
+  /** Só o mestre: impede o líder de andar, por exemplo durante uma cena. */
+  | { readonly tipo: 'TravarMovimento'; readonly travado: boolean }
   /** Visão extra temporária de um membro; zero tira. */
   | { readonly tipo: 'DefinirVisaoExtra'; readonly fichaId: string; readonly extra: number }
   /** Até a partida seguinte, com o mínimo de horas de descanso. Zera as horas do dia. */
@@ -195,6 +206,84 @@ export function alcanceDaVisao(estado: EstadoGrupo, participanteId: string, cont
   return Math.floor(alcance);
 }
 
+/** Se este participante pode mover o grupo agora: o mestre sempre; o condutor, se o mestre não travou. */
+export function podeConduzir(estado: EstadoGrupo, participanteId: string, contexto: ContextoDoGrupo): boolean {
+  if (ehMestre(participanteId)) {
+    return true;
+  }
+  return !estado.movimentoTravado && quemConduz(estado, contexto) === participanteId;
+}
+
+/** "2 h", "1 h 30 min", "45 min". */
+export function formatarDuracao(minutos: number): string {
+  const total = Math.round(minutos);
+  const horas = Math.floor(total / 60);
+  const resto = total % 60;
+  if (horas === 0) {
+    return `${resto} min`;
+  }
+  return resto === 0 ? `${horas} h` : `${horas} h ${resto} min`;
+}
+
+/** Um vizinho para onde o grupo pode (ou não) andar, com o custo e a explicação. */
+export type PassoPossivel =
+  | {
+      readonly coord: CoordHex;
+      readonly ok: true;
+      readonly minutos: number;
+      readonly partes: readonly ParteDoTempo[];
+      /** Com este passo, o grupo passa das horas de viagem do dia. */
+      readonly marchaForcada: boolean;
+    }
+  | { readonly coord: CoordHex; readonly ok: false; readonly motivo: string };
+
+/** Os 6 vizinhos do grupo, com o custo de cada passo ou o motivo de não dar para ir. */
+export function passosPossiveis(estado: EstadoGrupo, contexto: ContextoDoGrupo): PassoPossivel[] {
+  const { posicao } = estado;
+  if (!posicao) {
+    return [];
+  }
+  const viagem = contexto.obterViagem();
+  const mapa = contexto.obterMapa();
+  const membros = membrosNaViagem(estado, contexto);
+  return vizinhosHex(posicao).map((coord): PassoPossivel => {
+    const passo = tempoDoPasso(viagem, mapa, posicao, coord, estado.ritmo, membros);
+    if (!passo.ok) {
+      return { coord, ok: false, motivo: passo.motivo };
+    }
+    const minutos = Math.round(passo.horas * 60);
+    return {
+      coord,
+      ok: true,
+      minutos,
+      partes: passo.partes,
+      marchaForcada: estado.viajadoHoje + minutos > viagem.horasPorDia * 60,
+    };
+  });
+}
+
+/**
+ * Os hexes por onde o grupo passou, desde a última vez que o mestre o pôs no mapa.
+ * Só o mestre vê; os jogadores usam as próprias anotações.
+ */
+export function trilhaDoGrupo(estado: EstadoGrupo): CoordHex[] {
+  const trilha: CoordHex[] = [];
+  for (const { acontecimento } of estado.historico) {
+    if (acontecimento.tipo === 'posicionou') {
+      trilha.length = 0;
+      if (acontecimento.para) {
+        trilha.push(acontecimento.para);
+      }
+    } else if (acontecimento.tipo === 'passo') {
+      if (trilha.length === 0) {
+        trilha.push(acontecimento.de);
+      }
+      trilha.push(acontecimento.para);
+    }
+  }
+  return trilha;
+}
+
 // ---------- Permissões ----------
 
 /** O que quem controla o líder pode fazer; o resto é só do mestre. */
@@ -221,6 +310,9 @@ export function permissaoNoGrupo(
         ? 'Só o mestre ou quem controla o líder do grupo faz isto.'
         : 'Só o mestre faz isto no grupo.',
     };
+  }
+  if (acao.tipo === 'MoverGrupo' && estado.movimentoTravado) {
+    return { ok: false, motivo: 'O mestre travou o movimento do grupo.' };
   }
   if (acao.tipo === 'DefinirLider' && acao.fichaId === null) {
     return { ok: false, motivo: 'O líder só passa a liderança para outro membro.' };
@@ -333,6 +425,9 @@ export function aplicarAcaoGrupo(
         liderId: estado.liderId === acao.fichaId ? null : estado.liderId,
         visaoExtra: semChave(estado.visaoExtra, acao.fichaId),
       });
+
+    case 'TravarMovimento':
+      return ok(acao.travado === estado.movimentoTravado ? estado : { ...estado, movimentoTravado: acao.travado });
 
     case 'DefinirVisaoExtra': {
       if (!Number.isInteger(acao.extra) || acao.extra < 0) {

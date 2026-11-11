@@ -2481,3 +2481,45 @@ fieldset.formulario {
   background: #3a3424;
   color: #f0c870;
 }
+
+/* A conta de um passo do grupo, embaixo do mapa, como a dica de um CRPG. */
+.explicacao-passo {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: min(460px, calc(100% - 32px));
+  padding: 10px 14px;
+  border: 1px solid #9be08a;
+  border-radius: 8px;
+  background: #1d2029;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  color: #e6e3da;
+  font-size: 13px;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.explicacao-passo strong {
+  color: #9be08a;
+  font-size: 16px;
+}
+
+.explicacao-passo.marcha {
+  border-color: #ff9a5c;
+}
+
+.explicacao-passo.marcha strong,
+.explicacao-passo .aviso {
+  color: #ff9a5c;
+}
+
+.explicacao-passo.bloqueado {
+  border-color: #e05c5c;
+}
+
+.explicacao-passo.bloqueado strong {
+  color: #e05c5c;
+}

@@ -15,7 +15,17 @@ import { criarLojaFichas, type LojaFichas } from '../core/fichas';
 import { criarLojaRolagens, type LojaRolagens } from '../core/rolagens';
 import { criarLojaRegras, type LojaRegras } from '../core/regrasDaCampanha';
 import { criarLojaRegistro, type LojaRegistro } from '../core/registro';
-import { alcanceDaVisao, criarLojaGrupo, type ContextoDoGrupo, type LojaGrupo } from '../core/grupo';
+import {
+  alcanceDaVisao,
+  criarLojaGrupo,
+  membrosPresentes,
+  passosPossiveis,
+  podeConduzir,
+  type ContextoDoGrupo,
+  type LojaGrupo,
+  type PassoPossivel,
+} from '../core/grupo';
+import { ExplicacaoDoPasso } from './ExplicacaoDoPasso';
 import { membroNaViagem } from '../core/calculoDaFicha';
 import { criarLojaMapa, type LojaMapa } from '../core/loja';
 import type { EstadoMapa } from '../core/mapa';
@@ -244,6 +254,7 @@ function Editor({
   const podeRefazer = useSyncExternalStore(loja.assinar, loja.podeRefazer);
 
   const [hexSelecionado, setHexSelecionado] = useState<CoordHex | null>(null);
+  const [passoSobMouse, setPassoSobMouse] = useState<PassoPossivel | null>(null);
   const [agindoComoId, setAgindoComoId] = useState(sessao.autorId);
   const [telaAberta, setTelaAberta] = useState<Tela | null>(null);
   const [mapaTravado, setMapaTravado] = useState(lerMapaTravado);
@@ -291,10 +302,25 @@ function Editor({
             () => cenaRef.current,
             setHexSelecionado,
             (texto) => setMensagem({ tipo: 'aviso', texto }),
+            {
+              podeConduzir: () => podeConduzir(lojaGrupo.obterEstado(), sessao.autorId, contextoGrupo),
+              passos: () => passosPossiveis(lojaGrupo.obterEstado(), contextoGrupo),
+              aoMudarPasso: setPassoSobMouse,
+            },
           )
         : null,
-    [loja, lojaGrupo, manifesto],
+    [loja, lojaGrupo, manifesto, sessao, contextoGrupo],
   );
+
+  // O grupo andou, travou ou trocou de líder: os custos mostrados acompanham.
+  useEffect(() => {
+    controlador?.aoMudarGrupo();
+  }, [controlador, grupo, fichas, regras, agindoComoId]);
+
+  // Nomes dos membros mudaram: as cabeças do token acompanham.
+  useEffect(() => {
+    cenaRef.current?.atualizarGrupo();
+  }, [fichas]);
 
   useEffect(() => cenaRef.current?.selecionarHex(hexSelecionado), [hexSelecionado]);
 
@@ -450,13 +476,18 @@ function Editor({
       aoMoverDuranteTraco: controlador.aoMoverDuranteTraco,
       aoTerminarTraco: controlador.aoTerminarTraco,
       aoClicar: controlador.aoClicar,
+      obterCabecasDoGrupo: () =>
+        membrosPresentes(lojaGrupo.obterEstado(), contextoGrupo).map((id) => ({
+          id,
+          nome: lojaFichas.obterEstado().fichas[id]?.nome ?? '',
+        })),
     });
     cenaRef.current = cena;
     return () => {
       cena.destruir();
       cenaRef.current = null;
     };
-  }, [loja, lojaGrupo, manifesto, controlador]);
+  }, [loja, lojaGrupo, lojaFichas, manifesto, controlador, contextoGrupo]);
 
   useEffect(() => {
     const aoApertarTecla = (evento: KeyboardEvent) => {
@@ -497,7 +528,9 @@ function Editor({
       if (modoJogador) {
         // O modo jogador só olha: nenhum atalho de edição funciona aqui.
         if (evento.key === 'Escape') {
-          if (hexSelecionado) {
+          if (controlador?.grupoSelecionado()) {
+            controlador.desmarcarGrupo();
+          } else if (hexSelecionado) {
             setHexSelecionado(null);
           } else {
             sairDoModoJogador();
@@ -506,7 +539,9 @@ function Editor({
         return;
       }
       if (evento.key === 'Escape') {
-        if (ferramenta.tipo === 'nenhuma') {
+        if (controlador?.grupoSelecionado()) {
+          controlador.desmarcarGrupo();
+        } else if (ferramenta.tipo === 'nenhuma') {
           setHexSelecionado(null);
         } else {
           selecionarFerramenta(SEM_FERRAMENTA);
@@ -644,6 +679,8 @@ function Editor({
             <dd>Clique em um item e use o botão esquerdo, ou arraste o item para o mapa</dd>
             <dt>Ver um hex</dt>
             <dd>Sem ferramenta (Esc), clique no hex</dd>
+            <dt>Mover o grupo</dt>
+            <dd>Clique no estandarte e depois num vizinho, ou arraste o estandarte até ele</dd>
             <dt>Mover decoração</dt>
             <dd>Sem ferramenta (Esc), arraste com o botão esquerdo</dd>
             <dt>Zoom e câmera</dt>
@@ -732,6 +769,17 @@ function Editor({
             </button>
           ))}
         </div>
+        {grupo.posicao && (
+          <button
+            type="button"
+            className="trava-mapa"
+            aria-pressed={grupo.movimentoTravado}
+            title="Enquanto travado, o líder não move o grupo; o mestre continua podendo."
+            onClick={() => lojaGrupo.despachar({ tipo: 'TravarMovimento', travado: !grupo.movimentoTravado })}
+          >
+            {grupo.movimentoTravado ? '⛔ Movimento do líder travado' : '🚶 Líder pode mover o grupo'}
+          </button>
+        )}
         {manifesto && (
           <details className="ajuda-bloco">
             <summary>Aparência dos hexes não vistos</summary>
@@ -767,6 +815,7 @@ function Editor({
           onDragLeave={aoSairDoMapa}
           onDrop={aoSoltarNoMapa}
         />
+        {passoSobMouse && <ExplicacaoDoPasso passo={passoSobMouse} />}
         {modoJogador && (
           <div className="faixa-jogador">
             <span>
