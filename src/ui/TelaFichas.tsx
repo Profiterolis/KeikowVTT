@@ -26,7 +26,7 @@ import {
   podeVerFicha,
 } from '../core/permissoes';
 import { entregarKit } from '../core/kits';
-import { concluirEstudo } from '../core/noite';
+import { concluirEstudo, necessariosDoEstudo } from '../core/aprendizado';
 import { JanelaDarKit } from './JanelaDarKit';
 import { MenuDeContexto, type MenuAberto } from './MenuDeContexto';
 import type { Mesa } from './mesa';
@@ -1013,25 +1013,28 @@ function BlocoEstudos({
   mestre,
   editar,
 }: Pick<PropsBloco, 'ficha' | 'editar'> & { readonly compendio: EstadoCompendio; readonly mestre: boolean }) {
-  if (ficha.estudos.length === 0 && ficha.idiomas.length === 0) {
+  const regras = useRegras();
+  if (ficha.estudos.length === 0 && ficha.idiomas.length === 0 && ficha.proficienciasExtras.length === 0) {
     return null;
   }
+  const ROTULO_ESTUDO = { idioma: 'Idioma', magia: 'Magia', pericia: 'Perícia', proficiencia: 'Proficiência' } as const;
   return (
     <section className="ficha-secao">
-      <h3>Estudos e idiomas</h3>
+      <h3>Estudos e treinos</h3>
       {ficha.idiomas.length > 0 && <p>Idiomas aprendidos: {ficha.idiomas.join(', ')}</p>}
+      {ficha.proficienciasExtras.length > 0 && <p>Proficiências aprendidas: {ficha.proficienciasExtras.join(', ')}</p>}
       {ficha.estudos.length > 0 && (
         <ul className="assistente-itens">
           {ficha.estudos.map((e) => (
             <li key={e.id}>
               <span>
-                {e.tipo === 'magia' ? 'Magia' : 'Idioma'}: {e.assunto} · {e.turnos} {e.turnos === 1 ? 'turno' : 'turnos'} de estudo
+                {ROTULO_ESTUDO[e.tipo]}: {e.assunto} · {e.progresso}/{necessariosDoEstudo(e, regras, compendio) ?? '?'} sucessos
               </span>
               {mestre && (
                 <span className="carta-quantidade">
                   <button
                     type="button"
-                    title={e.tipo === 'magia' ? 'A magia entra na ficha' : 'O idioma entra na lista de idiomas aprendidos'}
+                    title="Dá o estudo por completo agora: a magia, o idioma, a perícia ou a proficiência entra na ficha"
                     onClick={() => editar(concluirEstudo(ficha, e.id, compendio), `estudo-${e.id}`)}
                   >
                     Concluir estudo

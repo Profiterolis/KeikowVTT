@@ -72,22 +72,28 @@ export interface Ficha {
   readonly usosGastos: Readonly<Record<string, number>>;
   /** Espaços de magia já gastos, do 1º ao 9º nível. Voltam no descanso longo. */
   readonly espacosGastos: readonly number[];
-  /** Estudos em andamento, feitos à noite: um idioma ou uma magia de um livro ou pergaminho. */
+  /** Estudos e treinos em andamento, feitos à noite. */
   readonly estudos: readonly EstudoNaFicha[];
   /** Idiomas aprendidos estudando (os da espécie ficam na espécie). */
   readonly idiomas: readonly string[];
+  /** Proficiências aprendidas treinando, como "Martial Weapons" (as da classe ficam na classe). */
+  readonly proficienciasExtras: readonly string[];
 }
 
-/** Um estudo em andamento. O mestre decide quando ele termina. */
+/** Um estudo (ou treino) em andamento: completa-se sozinho ao juntar os sucessos do tema. */
 export interface EstudoNaFicha {
   readonly id: string;
-  readonly tipo: 'idioma' | 'magia';
-  /** O nome do idioma, ou o nome da magia. */
-  readonly assunto: string;
-  /** A magia estudada (id no compêndio), ou `null` num idioma. */
+  readonly tipo: 'idioma' | 'magia' | 'pericia' | 'proficiencia';
+  /** O tema das regras de aprendizado; `null` numa magia (ou num estudo antigo sem tema). */
+  readonly temaId: string | null;
+  /** A magia estudada (id no compêndio), ou `null`. */
   readonly magiaId: string | null;
-  /** Quantos turnos da noite já foram estudados. */
-  readonly turnos: number;
+  /** O que entra na ficha ao completar: o idioma, a perícia ou a proficiência. `null` numa magia. */
+  readonly alvo: string | null;
+  /** O nome mostrado: o idioma, a magia, a perícia… */
+  readonly assunto: string;
+  /** Sucessos já juntados. */
+  readonly progresso: number;
 }
 
 export const ESPACOS_ZERADOS: readonly number[] = [0, 0, 0, 0, 0, 0, 0, 0, 0];
@@ -204,6 +210,7 @@ export function criarFicha(tipo: Exclude<TipoFicha, 'monstro'>, id: string, dono
     espacosGastos: ESPACOS_ZERADOS,
     estudos: [],
     idiomas: [],
+    proficienciasExtras: [],
   };
 }
 
@@ -546,4 +553,13 @@ export function criarLojaFichas(
 
 export function atributosValidos(valores: Readonly<Record<string, number>>): boolean {
   return ATRIBUTOS.every((a) => Number.isInteger(valores[a]) && valores[a] >= 1 && valores[a] <= 30);
+}
+
+/** Os textos de proficiência da ficha: os das classes, do antecedente e os aprendidos treinando. */
+export function textosDeProficiencia(ficha: Ficha): string[] {
+  return [
+    ...ficha.classes.flatMap((c) => entradaDaFicha(ficha, c.entradaId, 'classe')?.dados.proficiencias ?? []),
+    ...(entradaDaFicha(ficha, ficha.antecedenteId, 'antecedente')?.dados.proficiencias ?? []),
+    ...ficha.proficienciasExtras,
+  ];
 }

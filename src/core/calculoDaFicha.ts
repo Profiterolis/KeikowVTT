@@ -4,7 +4,8 @@
  */
 import { criarCalculo, type Calculo, type EfeitoAtivo, type EntradaDoCalculo, type ExtrasDaEntrada } from './calculadora';
 import { ATRIBUTOS, type Atributo, type Entrada, type EntradaDe } from './entradas';
-import { entradaDaFicha, nivelTotal, pvPorNivel, type Ficha } from './fichas';
+import { entradaDaFicha, nivelTotal, pvPorNivel, textosDeProficiencia, type Ficha } from './fichas';
+import { normalizarNome } from './formulas';
 import type { ResultadoFormula } from './formulas';
 import { encontrarPericia, idSalvaguarda, valoresDeViagem, type Regras } from './regras';
 import type { MembroNaViagem } from './viagem';
@@ -259,7 +260,40 @@ export function equipamentoDaFicha(ficha: Ficha): EquipamentoDaFicha {
     variaveis.usando_escudo = { valor: 1, origem };
     variaveis.escudo_bonus = { valor: escudo.dados.armadura!.caBase, origem };
   }
+  const semProficiencia = armadurasSemProficiencia(ficha, armadura, escudo);
+  if (semProficiencia.length > 0) {
+    variaveis.armadura_sem_proficiencia = { valor: 1, origem: semProficiencia.map((i) => i.nome || 'Armadura').join(', ') };
+  }
   return { armadura, escudo, armadurasEquipadas: armaduras.length, escudosEquipados: escudos.length, variaveis };
+}
+
+/** Os nomes que dão proficiência com cada peso de armadura e com escudos (como o SRD escreve, e em português). */
+const PROFICIENCIA_DA_ARMADURA: Readonly<Record<'leve' | 'media' | 'pesada' | 'escudo', readonly string[]>> = {
+  leve: ['Light Armor', 'Armadura leve', 'All armor'],
+  media: ['Medium Armor', 'Armadura média', 'All armor'],
+  pesada: ['Heavy Armor', 'Armadura pesada', 'All armor'],
+  escudo: ['Shields', 'Escudos', 'Escudo'],
+};
+
+/**
+ * A armadura e o escudo equipados que a ficha usa sem proficiência. Monstros não sofrem a
+ * penalidade: o bloco deles já vem pronto do livro.
+ */
+function armadurasSemProficiencia(ficha: Ficha, armadura: EntradaDe<'item'> | null, escudo: EntradaDe<'item'> | null): EntradaDe<'item'>[] {
+  if (ficha.monstroId) {
+    return [];
+  }
+  const textos = new Set(textosDeProficiencia(ficha).map(normalizarNome));
+  const sabe = (nomes: readonly string[]) => nomes.some((n) => textos.has(normalizarNome(n)));
+  const faltando: EntradaDe<'item'>[] = [];
+  const peso = armadura?.dados.armadura?.peso;
+  if (armadura && peso && peso !== 'escudo' && !sabe(PROFICIENCIA_DA_ARMADURA[peso as 'leve' | 'media' | 'pesada'] ?? [])) {
+    faltando.push(armadura);
+  }
+  if (escudo && !sabe(PROFICIENCIA_DA_ARMADURA.escudo)) {
+    faltando.push(escudo);
+  }
+  return faltando;
 }
 
 /** Limite de itens sintonizados ao mesmo tempo, como no 5e. Passar dele só mostra um aviso. */
@@ -286,6 +320,10 @@ export function avisosDaFicha(ficha: Ficha, calculo: Calculo): string[] {
   const armadura = equipamento.armadura?.dados.armadura;
   if (armadura?.desvantagemFurtividade) {
     avisos.push(`${equipamento.armadura!.nome} dá desvantagem em Furtividade.`);
+  }
+  const semProficiencia = equipamento.variaveis.armadura_sem_proficiencia;
+  if (semProficiencia) {
+    avisos.push(`Sem proficiência com ${semProficiencia.origem}: desvantagem em testes, salvaguardas e ataques de Força e Destreza, e não conjura magias.`);
   }
   const forca = calculo.valor('for');
   if (armadura && forca.ok && forca.valor < armadura.forcaMinima) {

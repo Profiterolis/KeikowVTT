@@ -7,6 +7,7 @@ import { ATRIBUTOS, type Atributo } from './entradas';
 import { lerFormula, normalizarNome, usoDaFormula, type FormulaLida } from './formulas';
 import { ehObjeto, ErroDeFormato, exigir } from './persistencia';
 import { lerNoite, problemasNaNoite, type RegrasDaNoite } from './regrasDaNoite';
+import { lerAprendizado, problemasNoAprendizado, type RegrasDoAprendizado } from './regrasDoAprendizado';
 import { lerViagem, problemasNaViagem, type RegrasDeViagem } from './viagem';
 
 export interface DefinicaoValor {
@@ -81,6 +82,8 @@ export interface Regras {
   readonly viagem: RegrasDeViagem;
   /** A noite no acampamento: turnos, descanso, ações e encontros (Fase 5.5). */
   readonly noite: RegrasDaNoite;
+  /** O que se aprende estudando e treinando à noite, e com que dificuldade. */
+  readonly aprendizado: RegrasDoAprendizado;
 }
 
 /** Valores que vêm da própria ficha, e não de uma fórmula. */
@@ -103,6 +106,8 @@ export const VARIAVEIS_DO_EQUIPAMENTO: Readonly<Record<string, { readonly rotulo
   armadura_forca_minima: { rotulo: 'Força mínima da armadura', padrao: 0 },
   usando_escudo: { rotulo: 'Usando escudo (1 sim, 0 não)', padrao: 0 },
   escudo_bonus: { rotulo: 'Bônus do escudo', padrao: 0 },
+  // Como no 5e: desvantagem em testes, salvaguardas e ataques de Força e Destreza, e sem conjurar.
+  armadura_sem_proficiencia: { rotulo: 'Usando armadura ou escudo sem proficiência (1 sim, 0 não)', padrao: 0 },
 };
 
 /**
@@ -119,6 +124,10 @@ export const VALORES_DE_VIAGEM: Readonly<Record<string, { readonly rotulo: strin
   veiculo_agua_fator: { rotulo: 'Velocidade do barco (×)', padrao: 0 },
   // Na noite: soma à Percepção passiva de quem é alvo de um furto (um cadeado, um cão de guarda).
   defesa_furto: { rotulo: 'Defesa contra furto (soma à Percepção passiva)', padrao: 0 },
+  // Predisposição para aprender: soma aos testes de estudo e de treino da noite.
+  aptidao_idiomas: { rotulo: 'Aptidão para idiomas (soma ao estudo)', padrao: 0 },
+  aptidao_magia: { rotulo: 'Aptidão para magia (soma ao estudo)', padrao: 0 },
+  aptidao_fisica: { rotulo: 'Aptidão física (soma ao treino)', padrao: 0 },
 };
 
 /** Um guia (1) tira a penalidade de um tipo de terreno para o grupo todo, como `guia_floresta`. */
@@ -354,6 +363,7 @@ export function conferirRegras(regras: Regras): ProblemaNasRegras[] {
   problemas.push(...problemasNaCriacao(regras.criacao));
   problemas.push(...problemasNaViagem(regras.viagem));
   problemas.push(...problemasNaNoite(regras.noite));
+  problemas.push(...problemasNoAprendizado(regras.aprendizado, regras.pericias.map((p) => p.id)));
   return problemas;
 }
 
@@ -443,6 +453,7 @@ export interface PadroesDasRegras {
   readonly criacao?: RegrasDeCriacao;
   readonly viagem?: RegrasDeViagem;
   readonly noite?: RegrasDaNoite;
+  readonly aprendizado?: RegrasDoAprendizado;
 }
 
 export function lerRegras(valor: unknown, padrao: PadroesDasRegras = {}): Regras {
@@ -506,6 +517,10 @@ export function lerRegras(valor: unknown, padrao: PadroesDasRegras = {}): Regras
     noite: (() => {
       exigir(valor.noite !== undefined || padrao.noite !== undefined, 'As regras estão sem a noite.');
       return lerNoite(valor.noite, padrao.noite!);
+    })(),
+    aprendizado: (() => {
+      exigir(valor.aprendizado !== undefined || padrao.aprendizado !== undefined, 'As regras estão sem o aprendizado.');
+      return lerAprendizado(valor.aprendizado, padrao.aprendizado!);
     })(),
   };
   const problemas = conferirRegras(regras);

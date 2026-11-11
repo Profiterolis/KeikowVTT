@@ -4,7 +4,7 @@
  * sem mudar nada sozinho.
  */
 import type { Calculo, ExtrasDaEntrada } from './calculadora';
-import { extrasDaClasse, habilidadesDaFicha, type HabilidadeNaFicha } from './calculoDaFicha';
+import { equipamentoDaFicha, extrasDaClasse, habilidadesDaFicha, type HabilidadeNaFicha } from './calculoDaFicha';
 import type { AcaoDeEntrada, Entrada, EntradaDe } from './entradas';
 import {
   comPilha,
@@ -14,7 +14,7 @@ import {
   type Ficha,
   type Moeda,
 } from './fichas';
-import { normalizarNome, type Rolagem } from './formulas';
+import { lerFormula, normalizarNome, usoDaFormula, type Rolagem } from './formulas';
 import { NOME_NIVEL_DO_ESPACO } from './regras';
 
 /** Uma rolagem feita por uma ação, pronta para o registro. */
@@ -64,8 +64,38 @@ export function rolarTeste(
   modo: ModoDoTeste = 'normal',
   aleatorio?: () => number,
 ): { ok: true; feita: RolagemFeita } | { ok: false; erro: string } {
-  const sufixo = modo === 'vantagem' ? ' (vantagem)' : modo === 'desvantagem' ? ' (desvantagem)' : '';
-  return rolar(calculo, `${D20[modo]} + ${termo}`, `${rotulo}${sufixo}`, undefined, aleatorio);
+  // Armadura sem proficiência: uma desvantagem nos testes de Força e Destreza (que anula a vantagem).
+  const penalizado = semProficienciaNaArmadura(calculo) && envolveForcaOuDestreza(calculo, termo);
+  const final: ModoDoTeste = !penalizado ? modo : modo === 'vantagem' ? 'normal' : 'desvantagem';
+  const sufixo =
+    (final === 'vantagem' ? ' (vantagem)' : final === 'desvantagem' ? ' (desvantagem)' : '') +
+    (penalizado ? ' (armadura sem proficiência)' : '');
+  return rolar(calculo, `${D20[final]} + ${termo}`, `${rotulo}${sufixo}`, undefined, aleatorio);
+}
+
+/** A ficha usa armadura ou escudo sem proficiência (a variável do equipamento). */
+export function semProficienciaNaArmadura(calculo: Calculo): boolean {
+  const valor = calculo.valor('armadura_sem_proficiencia');
+  return valor.ok && valor.valor >= 1;
+}
+
+/**
+ * Se o termo de um teste usa Força ou Destreza: os próprios atributos, as salvaguardas deles,
+ * as perícias deles e os valores das regras cuja fórmula cita um deles (como a iniciativa).
+ */
+export function envolveForcaOuDestreza(calculo: Calculo, termo: string): boolean {
+  const regras = calculo.regras;
+  const nomesDe = (texto: string): string[] => {
+    const lido = lerFormula(texto);
+    return lido.ok ? [...usoDaFormula(lido.formula).nomes].map(normalizarNome) : [];
+  };
+  const fisicos = new Set(['for', 'des', 'salvaguarda_for', 'salvaguarda_des']);
+  return nomesDe(termo).some(
+    (nome) =>
+      fisicos.has(nome) ||
+      regras.pericias.some((p) => p.id === nome && (p.atributo === 'for' || p.atributo === 'des')) ||
+      regras.valores.some((v) => v.id === nome && nomesDe(v.formula).some((n) => n === 'for' || n === 'des')),
+  );
 }
 
 // ---------- Usos e espaços ----------
@@ -230,6 +260,11 @@ export function conjurar(
   nivelDoEspaco: number,
   aleatorio?: () => number,
 ): ResultadoDaAcao {
+  // Como no 5e: com armadura ou escudo sem proficiência, não se conjura.
+  const semProficiencia = equipamentoDaFicha(ficha).variaveis.armadura_sem_proficiencia;
+  if (semProficiencia) {
+    return { ok: false, erro: `Usando ${semProficiencia.origem} sem proficiência, não dá para conjurar magias.` };
+  }
   let atual = ficha;
   const nivel = magia.dados.nivel === 0 ? 0 : Math.max(magia.dados.nivel, nivelDoEspaco);
   if (magia.dados.nivel > 0) {
@@ -282,6 +317,8 @@ export function proficienteComArma(ficha: Ficha, item: EntradaDe<'item'>): boole
   const textos = [
     ...ficha.classes.flatMap((c) => entradaDaFicha(ficha, c.entradaId, 'classe')?.dados.proficiencias ?? []),
     ...(entradaDaFicha(ficha, ficha.antecedenteId, 'antecedente')?.dados.proficiencias ?? []),
+    // As aprendidas treinando à noite.
+    ...ficha.proficienciasExtras,
   ].map(normalizarNome);
   const categoria = arma.dominio === 'simples' ? ['simple weapons', 'armas simples'] : ['martial weapons', 'armas marciais'];
   const nome = normalizarNome(item.nome).replace(/,.*$/, '').trim();
@@ -306,8 +343,12 @@ export function acoesDaArma(ficha: Ficha, item: EntradaDe<'item'>): AcaoDeEntrad
         : 'mod(FOR)';
   const prof = proficienteComArma(ficha, item) ? ' + prof' : '';
   const nome = item.nome || 'Arma';
+  // Todo ataque com arma usa Força ou Destreza: armadura sem proficiência dá desvantagem.
+  const penalizado = equipamentoDaFicha(ficha).variaveis.armadura_sem_proficiencia !== undefined;
+  const d20 = penalizado ? '2d20kl1' : '1d20';
+  const aviso = penalizado ? ' (desvantagem: armadura sem proficiência)' : '';
   const acoes: AcaoDeEntrada[] = [
-    { id: 'auto-ataque', rotulo: 'Atacar', passos: [{ tipo: 'rolar', formula: `1d20 + ${atributo}${prof}`, rotulo: `${nome}: ataque` }] },
+    { id: 'auto-ataque', rotulo: 'Atacar', passos: [{ tipo: 'rolar', formula: `${d20} + ${atributo}${prof}`, rotulo: `${nome}: ataque${aviso}` }] },
   ];
   if (arma.dano.trim() !== '') {
     acoes.push({

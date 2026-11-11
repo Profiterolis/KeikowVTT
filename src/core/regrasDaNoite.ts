@@ -6,7 +6,7 @@
 import { ehObjeto, ErroDeFormato, exigir } from './leitura';
 
 /** O que cada ação faz ao resolver o turno. */
-export const TIPOS_ACAO_NOTURNA = ['descanso', 'vigia', 'furto', 'pericia', 'estudo', 'livre'] as const;
+export const TIPOS_ACAO_NOTURNA = ['descanso', 'vigia', 'furto', 'pericia', 'estudo', 'treino', 'livre'] as const;
 export type TipoAcaoNoturna = (typeof TIPOS_ACAO_NOTURNA)[number];
 
 export const ROTULO_TIPO_ACAO_NOTURNA: Readonly<Record<TipoAcaoNoturna, string>> = {
@@ -15,6 +15,7 @@ export const ROTULO_TIPO_ACAO_NOTURNA: Readonly<Record<TipoAcaoNoturna, string>>
   furto: 'Furtar outro personagem do grupo',
   pericia: 'Teste de perícia (o jogador escolhe qual)',
   estudo: 'Estudar (idioma, ou magia de um livro ou pergaminho)',
+  treino: 'Treinar (perícias e proficiências físicas)',
   livre: 'Ação livre (texto para o mestre)',
 };
 
@@ -55,7 +56,8 @@ export const REGRAS_DA_NOITE_PADRAO: RegrasDaNoite = {
     { id: 'vigiar', nome: 'Vigiar', descricao: 'Ficar de guarda: o grupo não é surpreendido e os furtos ficam mais difíceis.', tipo: 'vigia' },
     { id: 'furtar', nome: 'Furtar', descricao: 'Tentar pegar um item de outro personagem do grupo, às escondidas.', tipo: 'furto' },
     { id: 'pericia', nome: 'Usar uma perícia', descricao: 'Caçar, cuidar de alguém, explorar os arredores… O mestre narra o resultado.', tipo: 'pericia' },
-    { id: 'estudar', nome: 'Estudar', descricao: 'Aprender um idioma, ou uma magia de um livro ou pergaminho que o personagem tenha.', tipo: 'estudo' },
+    { id: 'estudar', nome: 'Estudar', descricao: 'Aprender um idioma, ou uma magia de um livro ou pergaminho que o personagem tenha. Cada tema tem a sua dificuldade.', tipo: 'estudo' },
+    { id: 'treinar', nome: 'Treinar', descricao: 'Praticar uma perícia física ou o uso de armas e armaduras. Cada tema tem a sua dificuldade.', tipo: 'treino' },
     { id: 'livre', nome: 'Outra coisa', descricao: 'Descreva para o mestre o que o personagem faz.', tipo: 'livre' },
   ],
   chanceDeEncontro: { campo: 5, floresta: 10, colina: 10, montanha: 10, pantano: 15, deserto: 5, dunas: 5, povoado: 0 },

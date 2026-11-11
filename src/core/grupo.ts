@@ -84,6 +84,8 @@ export interface EscolhaNoturna {
   readonly alvoId?: string;
   readonly pericia?: string;
   readonly texto?: string;
+  /** Estudo ou treino: o tema das regras de aprendizado (um idioma, uma perícia, uma proficiência). */
+  readonly temaId?: string;
   readonly magiaId?: string;
   readonly fontePilhaId?: string;
 }
@@ -566,7 +568,9 @@ function problemaNaEscolha(tipo: TipoAcaoNoturna, fichaId: string, escolha: Esco
       if (escolha.magiaId) {
         return escolha.fontePilhaId ? null : 'Para estudar uma magia, escolha o livro ou pergaminho.';
       }
-      return escolha.texto?.trim() ? null : 'Diga o idioma, ou escolha uma magia de um livro ou pergaminho.';
+      return escolha.temaId ? null : 'Escolha o que estudar: um idioma, ou uma magia de um livro ou pergaminho.';
+    case 'treino':
+      return escolha.temaId ? null : 'Escolha o que treinar.';
     default:
       return null;
   }

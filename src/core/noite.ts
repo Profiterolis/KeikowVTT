@@ -10,7 +10,8 @@
 import { rolarTeste, transferirItem } from './acoesDaFicha';
 import { calcularFicha } from './calculoDaFicha';
 import type { EstadoCompendio } from './compendio';
-import { comExtra, type EstudoNaFicha, type Ficha } from './fichas';
+import { aprenderUmTurno, jaSabe, type AlvoDoAprendizado } from './aprendizado';
+import type { Ficha } from './fichas';
 import type { DadoRolado } from './formulas';
 import { normalizarNome } from './formulas';
 import {
@@ -113,44 +114,7 @@ export function descansoDaNoite(
   return descansou >= paraLongo ? 'longo' : descansou >= regras.noite.turnosParaCurto ? 'curto' : null;
 }
 
-/** Um turno de estudo a mais na ficha: junta ao estudo do mesmo assunto, ou começa um novo. */
-function comEstudo(ficha: Ficha, tipo: EstudoNaFicha['tipo'], assunto: string, magiaId: string | null, criarId: () => string): Ficha {
-  const chave = (e: Pick<EstudoNaFicha, 'tipo' | 'assunto' | 'magiaId'>) =>
-    e.tipo === 'magia' ? `magia:${e.magiaId}` : `idioma:${normalizarNome(e.assunto)}`;
-  const procurado = chave({ tipo, assunto, magiaId });
-  const existente = ficha.estudos.find((e) => chave(e) === procurado);
-  return {
-    ...ficha,
-    estudos: existente
-      ? ficha.estudos.map((e) => (e === existente ? { ...e, turnos: e.turnos + 1 } : e))
-      : [...ficha.estudos, { id: criarId(), tipo, assunto, magiaId, turnos: 1 }],
-  };
-}
-
-/** Os turnos estudados de um assunto, depois de um turno a mais. */
-function turnosDoEstudo(ficha: Ficha, tipo: EstudoNaFicha['tipo'], assunto: string, magiaId: string | null): number {
-  return (
-    ficha.estudos.find((e) => (tipo === 'magia' ? e.magiaId === magiaId : e.tipo === 'idioma' && normalizarNome(e.assunto) === normalizarNome(assunto)))
-      ?.turnos ?? 0
-  );
-}
-
-/**
- * O mestre dá um estudo por terminado: a magia entra na ficha (como as acrescentadas à mão),
- * ou o idioma entra na lista de idiomas aprendidos.
- */
-export function concluirEstudo(ficha: Ficha, estudoId: string, compendio: EstadoCompendio): Ficha {
-  const estudo = ficha.estudos.find((e) => e.id === estudoId);
-  if (!estudo) {
-    return ficha;
-  }
-  const semEstudo = { ...ficha, estudos: ficha.estudos.filter((e) => e !== estudo) };
-  if (estudo.tipo === 'magia' && estudo.magiaId) {
-    return comExtra(semEstudo, compendio, estudo.magiaId);
-  }
-  const jaSabe = ficha.idiomas.some((i) => normalizarNome(i) === normalizarNome(estudo.assunto));
-  return jaSabe ? semEstudo : { ...semEstudo, idiomas: [...ficha.idiomas, estudo.assunto] };
-}
+export { concluirEstudo } from './aprendizado';
 
 /** Resolve o turno atual da noite. Devolve `null` se o grupo não está passando a noite. */
 export function resolverTurno(entrada: EntradaDoTurno): ResultadoDoTurno | null {
@@ -260,8 +224,11 @@ export function resolverTurno(entrada: EntradaDoTurno): ResultadoDoTurno | null 
         linhas.push(`${nome} usou ${pericia.nome}: ${feita.feita.rolagem.total}`);
         break;
       }
-      case 'estudo': {
-        if (escolha.magiaId) {
+      case 'estudo':
+      case 'treino': {
+        let alvo: AlvoDoAprendizado | null = null;
+        let fonteNome = '';
+        if (acao.tipo === 'estudo' && escolha.magiaId) {
           const magia = compendio.entradas[escolha.magiaId] ?? ficha.entradas[escolha.magiaId];
           const fonte = ficha.itens.find((p) => p.id === escolha.fontePilhaId);
           if (!magia || magia.tipo !== 'magia') {
@@ -272,21 +239,43 @@ export function resolverTurno(entrada: EntradaDoTurno): ResultadoDoTurno | null 
             linhas.push(`${nome} quis estudar ${magia.nome}, mas está sem o livro ou pergaminho`);
             break;
           }
-          fichas[id] = comEstudo(ficha, 'magia', magia.nome, magia.id, criarId);
-          mudadas.add(id);
-          const turnos = turnosDoEstudo(fichas[id], 'magia', magia.nome, magia.id);
-          linhas.push(`${nome} estudou ${magia.nome} em ${ficha.entradas[fonte.entradaId]?.nome ?? 'um livro'} (${turnos} ${turnos === 1 ? 'turno' : 'turnos'} ao todo)`);
+          if (ficha.extras.includes(magia.id)) {
+            linhas.push(`${nome} já sabe ${magia.nome}`);
+            break;
+          }
+          alvo = { tipo: 'magia', magia };
+          fonteNome = ` em ${ficha.entradas[fonte.entradaId]?.nome ?? 'um livro'}`;
+        } else {
+          const modo = acao.tipo === 'treino' ? 'treino' : 'estudo';
+          const tema = regras.aprendizado.temas.find((t) => t.id === escolha.temaId && t.modo === modo);
+          if (!tema) {
+            linhas.push(`${nome} quis ${acao.tipo === 'treino' ? 'treinar' : 'estudar'} algo que não existe mais`);
+            break;
+          }
+          if (jaSabe(ficha, tema, regras)) {
+            linhas.push(`${nome} já sabe ${tema.nome}`);
+            break;
+          }
+          alvo = { tipo: 'tema', tema };
+        }
+        const turno = aprenderUmTurno(ficha, alvo, regras, compendio, aleatorio, criarId);
+        if (!turno.ok) {
+          linhas.push(`${nome} não conseguiu rolar: ${turno.erro}`);
           break;
         }
-        const idioma = escolha.texto?.trim() ?? '';
-        if (!idioma) {
-          linhas.push(`${nome} quis estudar, mas não disse o quê`);
-          break;
-        }
-        fichas[id] = comEstudo(ficha, 'idioma', idioma, null, criarId);
+        const t = turno.turno;
+        fichas[id] = t.ficha;
         mudadas.add(id);
-        const turnos = turnosDoEstudo(fichas[id], 'idioma', idioma, null);
-        linhas.push(`${nome} estudou o idioma ${idioma} (${turnos} ${turnos === 1 ? 'turno' : 'turnos'} ao todo)`);
+        registrar(ficha, t.rolagem, soODono(ficha));
+        const assunto = alvo.tipo === 'tema' ? alvo.tema.nome : alvo.magia.nome;
+        const verbo = acao.tipo === 'treino' ? 'treinou' : 'estudou';
+        linhas.push(
+          `${nome} ${verbo} ${assunto}${fonteNome}: ${t.rolagem.rolagem.total} contra ${t.cd}, ${t.sucesso ? 'sucesso' : 'falhou'} (${t.progresso}/${t.necessarios})`,
+        );
+        if (t.aprendeu) {
+          linhas.push(`🎓 ${nome} aprendeu ${assunto}!`);
+          notificacoes.push({ icone: '🎓', texto: `${nome} aprendeu ${assunto}!`, visibilidade: soODono(ficha) });
+        }
         break;
       }
       case 'livre':

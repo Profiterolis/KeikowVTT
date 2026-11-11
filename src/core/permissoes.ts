@@ -118,6 +118,7 @@ const COM_EDICAO_LIBERADA: readonly [keyof Ficha, string][] = [
   ['rascunho', 'os atributos rolados na criação'],
   ['estudos', 'os estudos'],
   ['idiomas', 'os idiomas aprendidos'],
+  ['proficienciasExtras', 'as proficiências aprendidas'],
 ];
 
 /** Campos do dia a dia, que o dono muda sempre. Quem recebe um presente não muda nenhum deles. */

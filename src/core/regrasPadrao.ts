@@ -1,4 +1,5 @@
 import { REGRAS_DA_NOITE_PADRAO } from './regrasDaNoite';
+import { REGRAS_DO_APRENDIZADO_PADRAO } from './regrasDoAprendizado';
 import type { Regras } from './regras';
 import { REGRAS_DE_VIAGEM_PADRAO } from './viagem';
 
@@ -105,4 +106,5 @@ export const REGRAS_PADRAO: Regras = {
   },
   viagem: REGRAS_DE_VIAGEM_PADRAO,
   noite: REGRAS_DA_NOITE_PADRAO,
+  aprendizado: REGRAS_DO_APRENDIZADO_PADRAO,
 };

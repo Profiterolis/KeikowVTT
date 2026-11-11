@@ -10,7 +10,15 @@ import {
   type EstadoGrupo,
   type LojaGrupo,
 } from '../core/grupo';
+import {
+  chanceDoAprendizado,
+  dificuldade,
+  estudoDe,
+  temasDisponiveis,
+  type AlvoDoAprendizado,
+} from '../core/aprendizado';
 import { chanceDeEncontro, resolverTurno } from '../core/noite';
+import { dificuldadeDaMagia } from '../core/regrasDoAprendizado';
 import type { LojaNotificacoes } from '../core/notificacoes';
 import { acoesDoLugar } from '../core/regrasDaNoite';
 import type { LojaRolagens } from '../core/rolagens';
@@ -82,7 +90,7 @@ export function SecaoNoite({ grupo, lojaGrupo, lojaFichas, lojaRolagens, lojaNot
     }
     const acao = acoes.find((a) => a.id === escolha.acaoId);
     const extra =
-      escolha.alvoId ? ` ${nomeDe(fichas[escolha.alvoId])}` : escolha.pericia ? `: ${regras.pericias.find((p) => p.id === escolha.pericia)?.nome ?? escolha.pericia}` : escolha.magiaId ? `: ${compendio.entradas[escolha.magiaId]?.nome ?? 'magia'}` : escolha.texto ? `: ${escolha.texto}` : '';
+      escolha.alvoId ? ` ${nomeDe(fichas[escolha.alvoId])}` : escolha.pericia ? `: ${regras.pericias.find((p) => p.id === escolha.pericia)?.nome ?? escolha.pericia}` : escolha.magiaId ? `: ${compendio.entradas[escolha.magiaId]?.nome ?? 'magia'}` : escolha.temaId ? `: ${regras.aprendizado.temas.find((t) => t.id === escolha.temaId)?.nome ?? escolha.temaId}` : escolha.texto ? `: ${escolha.texto}` : '';
     return `${acao?.nome ?? escolha.acaoId}${extra}`;
   };
 
@@ -101,7 +109,6 @@ export function SecaoNoite({ grupo, lojaGrupo, lojaFichas, lojaRolagens, lojaNot
       {meus.map((id) => {
         const rascunho = rascunhoDe(id);
         const acao = acoes.find((a) => a.id === rascunho.acaoId);
-        const pilhas = fichas[id]?.itens ?? [];
         return (
           <div key={id} className="painel-noite-membro">
             <strong>{nomeDe(fichas[id])}</strong> <small>({textoDaEscolha(noite.escolhas[id])})</small>
@@ -110,7 +117,7 @@ export function SecaoNoite({ grupo, lojaGrupo, lojaFichas, lojaRolagens, lojaNot
                 aria-label={`Ação de ${nomeDe(fichas[id])}`}
                 value={rascunho.acaoId}
                 disabled={bloqueada && !mestre}
-                onChange={(e) => mudar(id, { acaoId: e.target.value, alvoId: undefined, pericia: undefined, texto: undefined, magiaId: undefined, fontePilhaId: undefined })}
+                onChange={(e) => mudar(id, { acaoId: e.target.value, alvoId: undefined, pericia: undefined, texto: undefined, temaId: undefined, magiaId: undefined, fontePilhaId: undefined })}
               >
                 {acoes.map((a) => (
                   <option key={a.id} value={a.id} title={a.descricao}>
@@ -141,33 +148,15 @@ export function SecaoNoite({ grupo, lojaGrupo, lojaFichas, lojaRolagens, lojaNot
                 </select>
               )}
             </div>
-            {acao?.tipo === 'estudo' && (
-              <div className="painel-grupo-linha">
-                <select
-                  aria-label="Magia para estudar"
-                  value={rascunho.magiaId ?? ''}
-                  onChange={(e) => mudar(id, { magiaId: e.target.value || undefined, texto: undefined })}
-                >
-                  <option value="">Um idioma (escreva ao lado)</option>
-                  {magias.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      Magia: {m.nome}
-                    </option>
-                  ))}
-                </select>
-                {rascunho.magiaId ? (
-                  <select aria-label="Livro ou pergaminho" value={rascunho.fontePilhaId ?? ''} onChange={(e) => mudar(id, { fontePilhaId: e.target.value || undefined })}>
-                    <option value="">De qual livro ou pergaminho?</option>
-                    {pilhas.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {fichas[id]?.entradas[p.entradaId]?.nome ?? 'Item'}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <input className="painel-grupo-texto" placeholder="Qual idioma?" value={rascunho.texto ?? ''} onChange={(e) => mudar(id, { texto: e.target.value })} />
-                )}
-              </div>
+            {(acao?.tipo === 'estudo' || acao?.tipo === 'treino') && fichas[id] && (
+              <PainelAprendizado
+                ficha={fichas[id]}
+                modo={acao.tipo}
+                escolha={rascunho}
+                magias={magias}
+                compendio={compendio}
+                aoMudar={(parcial) => mudar(id, parcial)}
+              />
             )}
             {acao?.tipo === 'livre' && (
               <input className="painel-grupo-texto" placeholder="O que o personagem faz?" value={rascunho.texto ?? ''} onChange={(e) => mudar(id, { texto: e.target.value })} />
@@ -207,5 +196,90 @@ export function SecaoNoite({ grupo, lojaGrupo, lojaFichas, lojaRolagens, lojaNot
         </>
       )}
     </section>
+  );
+}
+
+/**
+ * O que estudar ou treinar: os temas que o personagem ainda não sabe (e, no estudo, as magias,
+ * com o livro ou pergaminho de onde vêm), mostrando a dificuldade, a chance e o progresso.
+ */
+function PainelAprendizado({
+  ficha,
+  modo,
+  escolha,
+  magias,
+  compendio,
+  aoMudar,
+}: {
+  readonly ficha: Ficha;
+  readonly modo: 'estudo' | 'treino';
+  readonly escolha: EscolhaNoturna;
+  readonly magias: readonly EntradaDe<'magia'>[];
+  readonly compendio: EstadoCompendio;
+  readonly aoMudar: (parcial: Partial<EscolhaNoturna>) => void;
+}) {
+  const regras = useRegras();
+  const temas = temasDisponiveis(ficha, regras, modo);
+  const magiasNovas = modo === 'estudo' ? magias.filter((m) => !ficha.extras.includes(m.id)) : [];
+  const valor = escolha.magiaId ? `magia:${escolha.magiaId}` : escolha.temaId ? `tema:${escolha.temaId}` : '';
+  const alvo: AlvoDoAprendizado | null = escolha.magiaId
+    ? (() => {
+        const magia = compendio.entradas[escolha.magiaId];
+        return magia?.tipo === 'magia' ? { tipo: 'magia' as const, magia } : null;
+      })()
+    : (() => {
+        const tema = temas.find((t) => t.id === escolha.temaId);
+        return tema ? { tipo: 'tema' as const, tema } : null;
+      })();
+  const rotulo = (cd: number, sucessos: number) => `CD ${cd}, ${sucessos} ${sucessos === 1 ? 'sucesso' : 'sucessos'}`;
+  const info = alvo ? chanceDoAprendizado(ficha, alvo, regras) : null;
+  const dif = alvo ? dificuldade(alvo, regras) : null;
+  const progresso = alvo ? (estudoDe(ficha, alvo)?.progresso ?? 0) : 0;
+
+  return (
+    <>
+      <div className="painel-grupo-linha">
+        <select
+          aria-label={modo === 'treino' ? 'O que treinar' : 'O que estudar'}
+          value={valor}
+          onChange={(e) => {
+            const [tipo, id] = e.target.value.split(':');
+            aoMudar(tipo === 'magia' ? { magiaId: id, temaId: undefined } : { temaId: id || undefined, magiaId: undefined, fontePilhaId: undefined });
+          }}
+        >
+          <option value="">{modo === 'treino' ? 'O que treinar?' : 'O que estudar?'}</option>
+          {temas.map((t) => (
+            <option key={t.id} value={`tema:${t.id}`}>
+              {t.nome} ({rotulo(t.cd, t.sucessos)})
+            </option>
+          ))}
+          {magiasNovas.map((m) => {
+            const d = dificuldadeDaMagia(regras.aprendizado, m.dados.nivel);
+            return (
+              <option key={m.id} value={`magia:${m.id}`}>
+                Magia: {m.nome} ({rotulo(d.cd, d.sucessos)})
+              </option>
+            );
+          })}
+        </select>
+        {escolha.magiaId && (
+          <select aria-label="Livro ou pergaminho" value={escolha.fontePilhaId ?? ''} onChange={(e) => aoMudar({ fontePilhaId: e.target.value || undefined })}>
+            <option value="">De qual livro ou pergaminho?</option>
+            {ficha.itens.map((p) => (
+              <option key={p.id} value={p.id}>
+                {ficha.entradas[p.entradaId]?.nome ?? 'Item'}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+      {temas.length === 0 && magiasNovas.length === 0 && <p className="tela-dica">Não há nada novo para {modo === 'treino' ? 'treinar' : 'estudar'}.</p>}
+      {info && dif && (
+        <p className="tela-dica">
+          Soma {info.bonus >= 0 ? `+${info.bonus}` : info.bonus} contra CD {dif.cd}: {Math.round(info.chance * 100)}% de chance por turno · progresso {progresso}/
+          {dif.sucessos}
+        </p>
+      )}
+    </>
   );
 }

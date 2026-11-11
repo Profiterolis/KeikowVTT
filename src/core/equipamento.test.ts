@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Calculado } from './calculadora';
+import { acoesDaArma, conjurar, rolarTeste } from './acoesDaFicha';
 import { avisosDaFicha, calcularFicha, equipamentoDaFicha } from './calculoDaFicha';
 import { aplicarAcaoCompendio, criarCompendioVazio, type EstadoCompendio } from './compendio';
 import { criarEntrada, type DadosArmadura, type Efeito, type Entrada, type EntradaDe } from './entradas';
@@ -173,6 +174,7 @@ describe('avisos', () => {
       '2 armaduras equipadas: vale só Chain Mail.',
       '2 escudos equipados: vale só Shield.',
       'Chain Mail dá desvantagem em Furtividade.',
+      'Sem proficiência com Chain Mail, Shield: desvantagem em testes, salvaguardas e ataques de Força e Destreza, e não conjura magias.',
       'Chain Mail exige Força 13: o deslocamento cai 3 m.',
     ]);
     const muitos = ['a1', 'a2', 'a3', 'a4'].map((id) => ({ ...anel, id }));
@@ -184,3 +186,49 @@ describe('avisos', () => {
     expect(avisosDaFicha(ficha, calcularFicha(ficha, REGRAS_PADRAO))).toContain('4 itens sintonizados: o limite é 3.');
   });
 });
+
+describe('armadura sem proficiência', () => {
+  const comProficiencias = (ficha: Ficha, textos: string[]): Ficha => ({ ...ficha, proficienciasExtras: textos });
+  const vestida = () => com({ for: 14, des: 14 }, ['cota', { equipado: true }]);
+
+  it('dá desvantagem nos testes de Força e Destreza (e anula a vantagem); os outros não mudam', () => {
+    const calculo = calcularFicha(vestida(), REGRAS_PADRAO);
+    const rotulo = (termo: string, modo: 'normal' | 'vantagem' = 'normal') => {
+      const r = rolarTeste(calculo, termo, 'Teste', modo, () => 0.5);
+      return r.ok ? `${r.feita.rotulo} | ${r.feita.formula.split(' ')[0]}` : r.erro;
+    };
+    expect(rotulo('atletismo')).toBe('Teste (desvantagem) (armadura sem proficiência) | 2d20kl1');
+    expect(rotulo('salvaguarda_des', 'vantagem')).toBe('Teste (armadura sem proficiência) | 1d20');
+    expect(rotulo('mod(FOR)')).toContain('desvantagem');
+    expect(rotulo('iniciativa')).toContain('desvantagem');
+    expect(rotulo('percepcao')).toBe('Teste | 1d20');
+    expect(rotulo('salvaguarda_sab')).toBe('Teste | 1d20');
+  });
+
+  it('com a proficiência (da classe ou treinada), nada muda', () => {
+    expect(equipamentoDaFicha(comProficiencias(vestida(), ['Heavy Armor'])).variaveis.armadura_sem_proficiencia).toBeUndefined();
+    expect(equipamentoDaFicha(comProficiencias(vestida(), ['All armor'])).variaveis.armadura_sem_proficiencia).toBeUndefined();
+    const comEscudo = comProficiencias(com({}, ['escudo', { equipado: true }]), ['Light Armor']);
+    expect(equipamentoDaFicha(comEscudo).variaveis.armadura_sem_proficiencia?.origem).toBe('Shield');
+    // Desequipada, não pesa.
+    expect(equipamentoDaFicha(com({}, ['cota'])).variaveis.armadura_sem_proficiencia).toBeUndefined();
+  });
+
+  it('o ataque das armas rola com desvantagem e não dá para conjurar', () => {
+    const espada: EntradaDe<'item'> = {
+      ...criarEntrada('item', 'espada'),
+      nome: 'Longsword',
+      dados: { ...criarEntrada('item', 'x').dados, arma: { dominio: 'marcial', alcanceTipo: 'corpo-a-corpo', dano: '1d8', tipoDano: '', danoVersatil: null, alcance: null, propriedades: [] } },
+    };
+    const ataque = acoesDaArma(vestida(), espada)[0].passos[0];
+    expect(ataque).toMatchObject({ formula: '2d20kl1 + mod(FOR)', rotulo: 'Longsword: ataque (desvantagem: armadura sem proficiência)' });
+    expect(acoesDaArma(comProficiencias(vestida(), ['Heavy Armor']), espada)[0].passos[0]).toMatchObject({ formula: '1d20 + mod(FOR)' });
+    const magia: EntradaDe<'magia'> = { ...criarEntrada('magia', 'luz'), nome: 'Light' };
+    const ficha = vestida();
+    expect(conjurar(ficha, calcularFicha(ficha, REGRAS_PADRAO), magia, 0)).toEqual({
+      ok: false,
+      erro: 'Usando Chain Mail sem proficiência, não dá para conjurar magias.',
+    });
+  });
+});
+

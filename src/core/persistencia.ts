@@ -209,7 +209,7 @@ function lerNoiteDoGrupo(dado: unknown): NoiteNoGrupo | null {
   exigir(dado.lugar === 'acampamento' || dado.lugar === 'abrigo', `${onde}: o lugar é inválido.`);
   exigir(typeof dado.nomeDoLugar === 'string' && Number.isInteger(dado.turno), `${onde} é inválida.`);
   exigir(ehObjeto(dado.escolhas), `${onde}: as escolhas são inválidas.`);
-  const campos = ['alvoId', 'pericia', 'texto', 'magiaId', 'fontePilhaId'] as const;
+  const campos = ['alvoId', 'pericia', 'texto', 'temaId', 'magiaId', 'fontePilhaId'] as const;
   const escolhas = Object.fromEntries(
     Object.entries(dado.escolhas).map(([fichaId, e]) => {
       exigir(ehObjeto(e) && typeof e.acaoId === 'string', `${onde}: uma escolha é inválida.`);

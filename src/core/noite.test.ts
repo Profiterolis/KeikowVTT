@@ -14,7 +14,7 @@ import {
   type EstadoGrupo,
 } from './grupo';
 import { aplicarAcao, criarMapaVazio, type EstadoMapa } from './mapa';
-import { concluirEstudo, resolverTurno, temVeiculoFechado } from './noite';
+import { resolverTurno, temVeiculoFechado } from './noite';
 import { REGRAS_PADRAO } from './regrasPadrao';
 
 const R = REGRAS_PADRAO;
@@ -186,19 +186,33 @@ describe('resolver um turno', () => {
     expect(resolver(naVila, encontro).notificacoes).toEqual([]);
   });
 
-  it('estudar um idioma avança na ficha; magia só com o livro; o mestre conclui', () => {
-    const r = resolver(comNoite({ lyra: { acaoId: 'estudar', texto: 'Élfico' } }), sequencia(SEM_ENCONTRO));
+  it('estudar é um teste contra a CD do tema: sucesso soma progresso; com tudo junto, aprende sozinho', () => {
+    // Élfico: CD 12, 6 sucessos, História (INT 10, +0). d20 = 15: sucesso.
+    const r = resolver(comNoite({ lyra: { acaoId: 'estudar', temaId: 'elfico' } }), sequencia(d20(15), SEM_ENCONTRO));
     const lyra = r.fichas[0];
-    expect(lyra.estudos).toEqual([{ id: 'novo', tipo: 'idioma', assunto: 'Élfico', magiaId: null, turnos: 1 }]);
-    expect(concluirEstudo(lyra, 'novo', compendio)).toMatchObject({ estudos: [], idiomas: ['Élfico'] });
+    expect(lyra.estudos).toEqual([{ id: 'novo', tipo: 'idioma', temaId: 'elfico', magiaId: null, alvo: 'Élfico', assunto: 'Élfico', progresso: 1 }]);
+    expect(r.turno.linhas).toContain('Lyra estudou Élfico: 15 contra 12, sucesso (1/6)');
+    expect(r.rolagens[0]).toMatchObject({ rotulo: 'Estudo: Élfico (CD 12)', visibilidade: { tipo: 'jogadores', ids: ['j-bia'] } });
+    const falhou = resolver(comNoite({ lyra: { acaoId: 'estudar', temaId: 'elfico' } }), sequencia(d20(5), SEM_ENCONTRO));
+    expect(falhou.fichas[0].estudos[0].progresso).toBe(0);
 
     const semLivro = resolver(comNoite({ thor: { acaoId: 'estudar', magiaId: 'fogo', fontePilhaId: 'nada' } }), sequencia(SEM_ENCONTRO));
     expect(semLivro.turno.linhas).toContain('Thorin quis estudar Bola de Fogo, mas está sem o livro ou pergaminho');
+    // A magia de teste é um truque: CD 10 e 1 sucesso. Aprende no mesmo turno.
     const comLivro = { ...FICHAS, thor: comItem(FICHAS.thor, compendio, 'grimorio', 'p-grimorio') };
-    const estudou = resolver(comNoite({ thor: { acaoId: 'estudar', magiaId: 'fogo', fontePilhaId: 'p-grimorio' } }), sequencia(SEM_ENCONTRO), comLivro);
+    const estudou = resolver(comNoite({ thor: { acaoId: 'estudar', magiaId: 'fogo', fontePilhaId: 'p-grimorio' } }), sequencia(d20(15), SEM_ENCONTRO), comLivro);
     const thor = estudou.fichas[0];
-    expect(thor.estudos[0]).toMatchObject({ tipo: 'magia', magiaId: 'fogo', turnos: 1 });
-    expect(concluirEstudo(thor, thor.estudos[0].id, compendio).extras).toEqual(['fogo']);
+    expect(thor.estudos).toEqual([]);
+    expect(thor.extras).toEqual(['fogo']);
+    expect(estudou.notificacoes[0]).toMatchObject({ icone: '🎓', texto: 'Thorin aprendeu Bola de Fogo!' });
+  });
+
+  it('treinar usa Força ou Destreza; ao completar, a proficiência entra na ficha', () => {
+    // Armas simples: CD 12, 6 sucessos, Força 10. Com 5 sucessos guardados, um 20 natural completa.
+    const quase = { ...FICHAS, thor: { ...FICHAS.thor, estudos: [{ id: 'e', tipo: 'proficiencia' as const, temaId: 'armas_simples', magiaId: null, alvo: 'Simple Weapons', assunto: 'Armas simples', progresso: 5 }] } };
+    const r = resolver(comNoite({ thor: { acaoId: 'treinar', temaId: 'armas_simples' } }), sequencia(d20(20), SEM_ENCONTRO), quase);
+    expect(r.fichas[0]).toMatchObject({ estudos: [], proficienciasExtras: ['Simple Weapons'] });
+    expect(r.turno.linhas).toContain('🎓 Thorin aprendeu Armas simples!');
   });
 
   it('no último turno, cada dono fica sabendo do descanso que ganhou', () => {

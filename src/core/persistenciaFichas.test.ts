@@ -117,21 +117,30 @@ describe('salvar e ler fichas', () => {
     expect(lido.ok && lido.estado.fichas.h1.rascunho).toBeNull();
   });
 
-  it('fichas da versão 7 ganham estudos e idiomas vazios', () => {
+  it('fichas da versão 7 ganham estudos, idiomas e proficiências aprendidas vazios', () => {
     const objeto = fichasParaObjeto(exemplo());
-    const { estudos: _e, idiomas: _i, ...antiga } = objeto.fichas[0];
+    const { estudos: _e, idiomas: _i, proficienciasExtras: _p, ...antiga } = objeto.fichas[0];
     const lido = desserializarFichas(comoTexto({ ...objeto, versao: 7, fichas: [antiga] }));
-    expect(lido.ok && lido.estado.fichas.h1).toMatchObject({ estudos: [], idiomas: [] });
+    expect(lido.ok && lido.estado.fichas.h1).toMatchObject({ estudos: [], idiomas: [], proficienciasExtras: [] });
   });
 
-  it('estudos e idiomas voltam iguais', () => {
+  it('estudos da versão 8 viram progresso: cada turno estudado conta como um sucesso', () => {
+    const objeto = fichasParaObjeto(exemplo());
+    const { proficienciasExtras: _p, ...ficha } = objeto.fichas[0];
+    const antiga = { ...ficha, estudos: [{ id: 'e1', tipo: 'idioma', assunto: 'Élfico', magiaId: null, turnos: 3 }] };
+    const lido = desserializarFichas(comoTexto({ ...objeto, versao: 8, fichas: [antiga] }));
+    expect(lido.ok && lido.estado.fichas.h1.estudos).toEqual([
+      { id: 'e1', tipo: 'idioma', temaId: null, magiaId: null, alvo: 'Élfico', assunto: 'Élfico', progresso: 3 },
+    ]);
+  });
+
+  it('estudos, idiomas e proficiências aprendidas voltam iguais', () => {
     const base = exemplo();
     const h1 = base.fichas.h1;
-    const estado = {
-      fichas: { ...base.fichas, h1: { ...h1, estudos: [{ id: 'e1', tipo: 'idioma' as const, assunto: 'Élfico', magiaId: null, turnos: 3 }], idiomas: ['Anão'] } },
-    };
+    const estudos = [{ id: 'e1', tipo: 'pericia' as const, temaId: 'atletismo', magiaId: null, alvo: 'atletismo', assunto: 'Atletismo', progresso: 3 }];
+    const estado = { fichas: { ...base.fichas, h1: { ...h1, estudos, idiomas: ['Anão'], proficienciasExtras: ['Martial Weapons'] } } };
     const lido = desserializarFichas(serializarFichas(estado));
-    expect(lido.ok && lido.estado.fichas.h1).toMatchObject({ estudos: estado.fichas.h1.estudos, idiomas: ['Anão'] });
+    expect(lido.ok && lido.estado.fichas.h1).toMatchObject({ estudos, idiomas: ['Anão'], proficienciasExtras: ['Martial Weapons'] });
   });
 
   it('rascunhos da versão 6 ganham o kit vazio, e os itens da ficha viram os itens livres', () => {
@@ -167,7 +176,7 @@ describe('salvar e ler fichas', () => {
   });
 
   it('recusa versão desconhecida e texto que não é JSON', () => {
-    expect(desserializarFichas(comoTexto({ ...fichasParaObjeto(exemplo()), versao: 9 })).ok).toBe(false);
+    expect(desserializarFichas(comoTexto({ ...fichasParaObjeto(exemplo()), versao: 10 })).ok).toBe(false);
     expect(desserializarFichas('lixo').ok).toBe(false);
   });
 });

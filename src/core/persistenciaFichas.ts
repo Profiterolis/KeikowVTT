@@ -23,7 +23,7 @@ import { METODOS_ATRIBUTOS, type MetodoAtributos } from './regras';
 import { atualizarEntradas, comoResultado, lerEntradas, lerJson, VERSAO_COMPENDIO } from './persistenciaCompendio';
 
 /** Aumente ao mudar o formato das fichas, e acrescente a conversão em `converterFicha`. */
-const VERSAO_FICHAS = 8;
+const VERSAO_FICHAS = 9;
 
 /** Passa uma ficha gravada numa versão antiga para a atual, ainda sem conferir. */
 function converterFicha(ficha: unknown, versao: number): unknown {
@@ -62,6 +62,17 @@ function converterFicha(ficha: unknown, versao: number): unknown {
   if (versao < 8) {
     // Versão 8: estudos feitos à noite e idiomas aprendidos.
     atual = { ...atual, estudos: [], idiomas: [] };
+  }
+  if (versao < 9) {
+    // Versão 9: estudos com tema e progresso (os turnos antigos viram sucessos) e proficiências aprendidas.
+    const estudos = Array.isArray(atual.estudos)
+      ? atual.estudos.map((e) =>
+          ehObjeto(e)
+            ? { id: e.id, tipo: e.tipo, temaId: null, magiaId: e.magiaId ?? null, alvo: e.tipo === 'idioma' ? e.assunto : null, assunto: e.assunto, progresso: e.turnos ?? 0 }
+            : e,
+        )
+      : [];
+    atual = { ...atual, estudos, proficienciasExtras: [] };
   }
   if (versao < 7 && ehObjeto(atual.rascunho)) {
     // Versão 7: o rascunho guarda o kit escolhido e os itens livres; os itens que a ficha já tinha
@@ -268,21 +279,31 @@ function lerOrganizacao(valor: Dado, onde: string, entradas: Record<string, { ti
   const espacosGastos = valor.espacosGastos.map((n) => inteiro(n, `${onde}: os espaços de magia gastos`, 0));
 
   const estudos: EstudoNaFicha[] = listaDe(valor.estudos, `${onde}: o estudo`, (e, aqui) => {
-    exigir(e.tipo === 'idioma' || e.tipo === 'magia', `${aqui} tem um tipo desconhecido.`);
-    exigir(e.magiaId === null || typeof e.magiaId === 'string', `${aqui} tem uma magia inválida.`);
+    exigir(['idioma', 'magia', 'pericia', 'proficiencia'].includes(e.tipo as string), `${aqui} tem um tipo desconhecido.`);
+    const textoOuNulo = (campo: string) => {
+      exigir(e[campo] === null || typeof e[campo] === 'string', `${aqui}: "${campo}" é inválido.`);
+      return e[campo] as string | null;
+    };
     return {
       id: texto(e, 'id', aqui),
-      tipo: e.tipo,
+      tipo: e.tipo as EstudoNaFicha['tipo'],
+      temaId: textoOuNulo('temaId'),
+      magiaId: textoOuNulo('magiaId'),
+      alvo: textoOuNulo('alvo'),
       assunto: texto(e, 'assunto', aqui),
-      magiaId: e.magiaId as string | null,
-      turnos: inteiro(e.turnos, aqui, 0),
+      progresso: inteiro(e.progresso, aqui, 0),
     };
   });
   semRepetir(estudos.map((e) => e.id), `${onde}: os estudos`);
   exigir(Array.isArray(valor.idiomas) && valor.idiomas.every((i) => typeof i === 'string'), `${onde}: os idiomas não são válidos.`);
   const idiomas = valor.idiomas as string[];
+  exigir(
+    Array.isArray(valor.proficienciasExtras) && valor.proficienciasExtras.every((p) => typeof p === 'string'),
+    `${onde}: as proficiências aprendidas não são válidas.`,
+  );
+  const proficienciasExtras = valor.proficienciasExtras as string[];
 
-  return { itens, extras, notas, moedas: lidasMoedas, secoes, usosGastos, espacosGastos, estudos, idiomas };
+  return { itens, extras, notas, moedas: lidasMoedas, secoes, usosGastos, espacosGastos, estudos, idiomas, proficienciasExtras };
 }
 
 export function fichasParaObjeto(estado: EstadoFichas) {
