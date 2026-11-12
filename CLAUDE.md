@@ -166,6 +166,7 @@ Cada fase deve funcionar sozinha antes de avançar.
 - `scripts/srd/`: `converterSrd.ts` (conversão, efeitos e ações prontos, conferências) e `gerar-srd.mjs`.
 
 ## Próximos passos e pendências
+- **Pedido do usuário para depois da furtividade:** um indicador (✓ verde) na lista de instâncias para as que já foram usadas na campanha atual, para decidir se zera o "explorado" ou tira a instância (ver `IDEIAS.md`).
 - **Pequenos ajustes pendentes:** no crítico, o registro mostra a fórmula sem os dados dobrados (o total e os dados estão certos); poções oferecem "Equipar" no menu sem necessidade.
 - **Ideias para o futuro ficam em `IDEIAS.md`** (escrito pelo usuário, em texto livre). Ao planejar um passo, ler o arquivo e apontar as ideias que se encaixam nele; não reorganizar nem reescrever o texto do usuário sem ele pedir. Ideias novas vindas da conversa podem ser acrescentadas no fim, na seção do Claude.
 

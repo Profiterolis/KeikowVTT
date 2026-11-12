@@ -62,6 +62,8 @@ Ideias aleatórias para o KeikowVTT:
 - Tokens inquebráveis: alguns tokens e objetos do mapa (portas, paredes, baús...) não podem ser quebrados, talvez marcados por etiquetas; os outros poderiam ser destruídos.
 - Furtividade como no Baldur's Gate 3: quem passa no teste de Furtividade fica invisível para os outros; a chance de passar depende da visão de cada token que pode perceber (inclusive NPCs e criaturas do mestre), da luz e da escuridão. (Proposta como passo 6b da Fase 6.)
 - Itens e efeitos que removem luz, não só criam: por exemplo um item mágico que rouba temporariamente as fontes de luz do ambiente atual. Junto com a magia Darkness, as regiões de escuridão (passo 9) e acender braseiros.
+- Indicador de instância já usada na campanha atual: um ✓ verde na lista de instâncias, para o mestre saber se precisa zerar o "explorado" (a memória da névoa) enquanto joga, ou se tira a instância da campanha.
+- Consumíveis não podem virar itens públicos: uma poção não fica ao alcance de todo o grupo. Mas, como no Baldur's Gate 3, um membro pode arremessar uma poção na direção de um companheiro: o arremesso segue a conta de dano e distância já pensada para itens arremessados (pelo peso), e a poção quebra e aplica o efeito dela (a cura) em quem é atingido. Liga com os itens públicos (cartografia) e com o arremesso de itens.
 
 ## Deixado para depois nos planos já feitos
 
