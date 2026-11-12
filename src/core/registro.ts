@@ -2,6 +2,7 @@ import type { AcaoCampanha } from './campanha';
 import type { AcaoCompendio } from './compendio';
 import type { AcaoFichas } from './fichas';
 import type { AcaoGrupo } from './grupo';
+import type { AcaoInstancias } from './instancias';
 import type { CoordHex } from './hex';
 import type { AcaoMapa } from './mapa';
 import type { AcaoRegras } from './regrasDaCampanha';
@@ -17,6 +18,7 @@ export type TipoEvento =
   | AcaoCompendio['tipo']
   | AcaoFichas['tipo']
   | AcaoRegras['tipo']
+  | AcaoInstancias['tipo']
   | 'Desfazer'
   | 'Refazer'
   | 'DesfazerCompendio'
@@ -24,7 +26,9 @@ export type TipoEvento =
   | 'DesfazerFichas'
   | 'RefazerFichas'
   | 'DesfazerRegras'
-  | 'RefazerRegras';
+  | 'RefazerRegras'
+  | 'DesfazerInstancias'
+  | 'RefazerInstancias';
 
 /** Algo que acabou de acontecer. Nunca carrega textos escritos, para não vazar segredos. */
 export interface EventoExecutado {

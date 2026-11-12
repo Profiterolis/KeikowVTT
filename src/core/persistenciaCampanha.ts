@@ -16,6 +16,8 @@ import type { EstadoCompendio } from './compendio';
 import { compendioParaObjeto } from './persistenciaCompendio';
 import type { EstadoFichas } from './fichas';
 import { fichasParaObjeto } from './persistenciaFichas';
+import type { EstadoInstancias } from './instancias';
+import { instanciasParaObjeto } from './persistenciaInstancias';
 import { lerRegras, type Regras } from './regras';
 import { REGRAS_PADRAO } from './regrasPadrao';
 
@@ -133,13 +135,14 @@ export function desserializarCampanha(texto: string): ResultadoDe<ConteudoCampan
   });
 }
 
-/** O arquivo do botão Salvar: o mapa, com os dados da campanha e o compêndio junto. */
+/** O arquivo do botão Salvar: o mapa, com os dados da campanha, o compêndio, as fichas e as instâncias junto. */
 export function serializarArquivoCompleto(
   estado: EstadoMapa,
   grupo: EstadoGrupo,
   conteudo: ConteudoCampanha,
   compendio?: EstadoCompendio,
   fichas?: EstadoFichas,
+  instancias?: EstadoInstancias,
 ): string {
   return JSON.stringify(
     {
@@ -147,6 +150,7 @@ export function serializarArquivoCompleto(
       campanha: campanhaParaObjeto(conteudo),
       ...(compendio ? { compendio: compendioParaObjeto(compendio) } : {}),
       ...(fichas ? { fichas: fichasParaObjeto(fichas) } : {}),
+      ...(instancias ? { instancias: instanciasParaObjeto(instancias) } : {}),
     },
     null,
     2,

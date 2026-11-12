@@ -405,6 +405,20 @@ describe('trava do movimento', () => {
     expect(motivoParaNaoConduzir(viajando, 'j-ana', contexto)).toBeNull();
   });
 
+  it('o líder dentro de uma instância não move o grupo; o mestre sim', () => {
+    const naInstancia = { ...contexto, estaNumaInstancia: (id: string) => id === 'j-ana' };
+    const recusas: string[] = [];
+    const doLider = criarLojaGrupo(viajando, { obterAutorId: () => 'j-ana', aoRecusar: (m) => recusas.push(m) }, naInstancia);
+    expect(doLider.despachar({ tipo: 'MoverGrupo', para: B })).toBe(false);
+    expect(recusas[0]).toContain('instância');
+    expect(podeConduzir(viajando, 'j-ana', naInstancia)).toBe(false);
+    expect(motivoParaNaoConduzir(viajando, 'j-ana', naInstancia)).toContain('instância');
+    // O resto do que o líder faz continua valendo, e o mestre move o grupo.
+    expect(doLider.despachar({ tipo: 'DefinirRitmo', ritmo: 'lento' })).toBe(true);
+    const doMestre = criarLojaGrupo(viajando, { obterAutorId: () => 'mestre' }, naInstancia);
+    expect(doMestre.despachar({ tipo: 'MoverGrupo', para: B })).toBe(true);
+  });
+
   it('podeConduzir: o mestre sempre; o líder, se não estiver travado; os outros, nunca', () => {
     expect(podeConduzir(viajando, 'mestre', contexto)).toBe(true);
     expect(podeConduzir(viajando, 'j-ana', contexto)).toBe(true);

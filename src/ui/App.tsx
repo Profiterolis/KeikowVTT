@@ -13,6 +13,7 @@ import { ehMestre } from '../core/permissoes';
 import { VISIVEL_A_TODOS } from '../core/visibilidade';
 import { criarLojaCompendio, type LojaCompendio } from '../core/compendio';
 import { criarLojaFichas, type LojaFichas } from '../core/fichas';
+import { criarLojaInstancias, instanciaDe, type LojaInstancias } from '../core/instancias';
 import { criarLojaRolagens, type LojaRolagens } from '../core/rolagens';
 import { criarLojaRegras, type LojaRegras } from '../core/regrasDaCampanha';
 import { criarLojaRegistro, type LojaRegistro } from '../core/registro';
@@ -52,12 +53,14 @@ import {
   lerCampanhaLocal,
   lerCompendioLocal,
   lerFichasLocal,
+  lerInstanciasLocal,
   lerNotificacoesLocal,
   lerRolagensLocal,
   lerSalvamentoLocal,
   manterCampanhaLocal,
   manterCompendioLocal,
   manterFichasLocal,
+  manterInstanciasLocal,
   manterNotificacoesLocal,
   manterRolagensLocal,
   manterSalvamentoLocal,
@@ -110,6 +113,7 @@ interface EditorCarregado {
   readonly lojaRegistro: LojaRegistro;
   readonly lojaCompendio: LojaCompendio;
   readonly lojaFichas: LojaFichas;
+  readonly lojaInstancias: LojaInstancias;
   readonly lojaRolagens: LojaRolagens;
   readonly lojaNotificacoes: LojaNotificacoes;
   readonly lojaRegras: LojaRegras;
@@ -134,13 +138,14 @@ const IMAGENS = criarBancoDeImagens();
 
 async function iniciarEditor(): Promise<EditorCarregado> {
   pedirProtecaoDosDados();
-  const [salvo, salvaCampanha, salvoCompendio, salvasFichas, salvasRolagens, salvasNotificacoes] = await Promise.all([
+  const [salvo, salvaCampanha, salvoCompendio, salvasFichas, salvasRolagens, salvasNotificacoes, salvasInstancias] = await Promise.all([
     lerSalvamentoLocal(ARMAZENAMENTO, localStorage),
     lerCampanhaLocal(ARMAZENAMENTO, localStorage),
     lerCompendioLocal(ARMAZENAMENTO, localStorage),
     lerFichasLocal(ARMAZENAMENTO, localStorage),
     lerRolagensLocal(ARMAZENAMENTO, localStorage),
     lerNotificacoesLocal(ARMAZENAMENTO, localStorage),
+    lerInstanciasLocal(ARMAZENAMENTO, localStorage),
   ]);
   const campanha = salvaCampanha?.ok ? salvaCampanha : null;
   const mapa = salvo?.ok ? salvo : null;
@@ -162,7 +167,8 @@ async function iniciarEditor(): Promise<EditorCarregado> {
     (salvo && !salvo.ok && salvo.erro) ||
     (salvaCampanha && !salvaCampanha.ok && salvaCampanha.erro) ||
     (salvoCompendio && !salvoCompendio.ok && salvoCompendio.erro) ||
-    (salvasFichas && !salvasFichas.ok && salvasFichas.erro);
+    (salvasFichas && !salvasFichas.ok && salvasFichas.erro) ||
+    (salvasInstancias && !salvasInstancias.ok && salvasInstancias.erro);
   const loja = criarLojaMapa(mapa?.estado, opcoesRegistro);
   const lojaCompendio = criarLojaCompendio(compendio?.estado, opcoesRegistro);
   const lojaFichas = criarLojaFichas(salvasFichas?.ok ? salvasFichas.estado : undefined, opcoesRegistro, () => ({
@@ -170,7 +176,8 @@ async function iniciarEditor(): Promise<EditorCarregado> {
     // Criando o personagem, o jogador só fica com os itens dos kits oferecidos.
     itensDaCriacao: (ficha) => problemaNosItensDaCriacao(ficha, lojaCompendio.obterEstado(), lojaRegras.obterEstado()),
   }));
-  // O grupo consulta o mapa (terreno de cada passo), as regras de viagem e quem controla cada ficha.
+  const lojaInstancias = criarLojaInstancias(salvasInstancias?.ok ? salvasInstancias.estado : undefined, opcoesRegistro);
+  // O grupo consulta o mapa (terreno de cada passo), as regras de viagem, quem controla cada ficha e quem está numa instância.
   const contextoGrupo: ContextoDoGrupo = {
     obterMapa: loja.obterEstado,
     obterViagem: () => lojaRegras.obterEstado().viagem,
@@ -180,6 +187,7 @@ async function iniciarEditor(): Promise<EditorCarregado> {
       return ficha ? membroNaViagem(ficha, lojaRegras.obterEstado()) : null;
     },
     obterNoite: () => lojaRegras.obterEstado().noite,
+    estaNumaInstancia: (participanteId) => instanciaDe(lojaInstancias.obterEstado(), participanteId) !== null,
   };
   const lojaGrupo = criarLojaGrupo(mapa?.grupo, opcoesRegistro, contextoGrupo);
   // Notificações ilegíveis não impedem de abrir: começam vazias.
@@ -208,6 +216,7 @@ async function iniciarEditor(): Promise<EditorCarregado> {
     lojaRegistro,
     lojaCompendio,
     lojaFichas,
+    lojaInstancias,
     // Um registro de rolagens ilegível não impede de abrir: começa vazio.
     lojaRolagens: criarLojaRolagens(salvasRolagens?.ok ? salvasRolagens.rolagens : []),
     lojaNotificacoes,
@@ -282,6 +291,7 @@ function Editor({
   lojaRegistro,
   lojaCompendio,
   lojaFichas,
+  lojaInstancias,
   lojaRolagens,
   lojaNotificacoes,
   lojaRegras,
@@ -479,6 +489,21 @@ function Editor({
         localStorage,
       ),
     [lojaFichas],
+  );
+
+  useEffect(
+    () =>
+      manterInstanciasLocal(
+        lojaInstancias,
+        () =>
+          setMensagem({
+            tipo: 'erro',
+            texto: 'O navegador recusou guardar as instâncias. Use o botão Salvar.',
+          }),
+        ARMAZENAMENTO,
+        localStorage,
+      ),
+    [lojaInstancias],
   );
 
   useEffect(
@@ -780,6 +805,7 @@ function Editor({
           lojaRegistro={lojaRegistro}
           lojaCompendio={lojaCompendio}
           lojaFichas={lojaFichas}
+          lojaInstancias={lojaInstancias}
           lojaRegras={lojaRegras}
           aoAbrirMapa={(estado) => {
             setHexSelecionado(null);

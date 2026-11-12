@@ -76,6 +76,15 @@ const DESCRICOES: Readonly<Record<TipoEvento, (quantidade: number) => string>> =
   CarregarFichas: fixo('abriu fichas de um arquivo'),
   DesfazerFichas: fixo('desfez uma edição de ficha'),
   RefazerFichas: fixo('refez uma edição de ficha'),
+  CriarInstancia: fixo('criou uma instância'),
+  EditarInstancia: fixo('editou uma instância'),
+  DuplicarInstancia: fixo('duplicou uma instância'),
+  ApagarInstancia: fixo('apagou uma instância'),
+  LevarParaCena: fixo('levou jogadores a outra cena'),
+  DefinirCenaInicial: fixo('mudou a cena inicial da campanha'),
+  CarregarInstancias: fixo('abriu instâncias de um arquivo'),
+  DesfazerInstancias: fixo('desfez uma edição de instância'),
+  RefazerInstancias: fixo('refez uma edição de instância'),
 };
 
 export function nomeDoAutor(autorId: string, participantes: readonly Participante[]): string {

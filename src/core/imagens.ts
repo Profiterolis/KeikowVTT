@@ -6,6 +6,7 @@
 import type { EstadoCompendio } from './compendio';
 import type { Entrada } from './entradas';
 import type { EstadoFichas } from './fichas';
+import type { EstadoInstancias } from './instancias';
 import { exigir } from './leitura';
 
 /** Tipos de arquivo aceitos, com a extensão usada dentro do arquivo da campanha. */
@@ -84,8 +85,12 @@ export function imagemDoToken(ficha: { readonly retrato?: string; readonly token
 
 const imagemDaEntrada = (entrada: Entrada) => entrada.imagem;
 
-/** Todas as imagens que o compêndio e as fichas citam (retratos, tokens e imagens das entradas e cópias). */
-export function imagensUsadas(compendio: EstadoCompendio | null, fichas: EstadoFichas | null): Set<string> {
+/** Todas as imagens que os documentos citam: retratos, tokens, imagens das entradas e cópias e os fundos das instâncias. */
+export function imagensUsadas(
+  compendio: EstadoCompendio | null,
+  fichas: EstadoFichas | null,
+  instancias: EstadoInstancias | null = null,
+): Set<string> {
   const usadas = new Set<string>();
   const anotar = (id: string | undefined) => {
     if (id) {
@@ -101,6 +106,9 @@ export function imagensUsadas(compendio: EstadoCompendio | null, fichas: EstadoF
     for (const copia of Object.values(ficha.entradas)) {
       anotar(imagemDaEntrada(copia));
     }
+  }
+  for (const instancia of Object.values(instancias?.instancias ?? {})) {
+    anotar(instancia.imagem ?? undefined);
   }
   return usadas;
 }

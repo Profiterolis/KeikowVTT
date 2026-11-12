@@ -269,6 +269,8 @@ export interface ContextoDoGrupo {
   readonly obterMembroNaViagem: (fichaId: string) => MembroNaViagem | null;
   /** As regras da noite; sem elas, valem as padrão. */
   readonly obterNoite?: () => RegrasDaNoite;
+  /** Se o jogador está dentro de uma instância (Fase 6). Sem isso, todos estão no mapa-mundi. */
+  readonly estaNumaInstancia?: (participanteId: string) => boolean;
 }
 
 export const CONTEXTO_VAZIO: ContextoDoGrupo = {
@@ -348,23 +350,35 @@ export function alcanceDaVisao(estado: EstadoGrupo, participanteId: string, cont
   return Math.floor(alcance);
 }
 
-/** Se este participante pode mover o grupo agora: o mestre sempre; o condutor, se o mestre não travou. */
+const NUMA_INSTANCIA = 'Você está numa instância: o grupo só anda depois que o mestre levar você de volta ao mapa-mundi.';
+
+/**
+ * Se este participante pode mover o grupo agora: o mestre sempre; o condutor, se o mestre não
+ * travou e se ele não está dentro de uma instância.
+ */
 export function podeConduzir(estado: EstadoGrupo, participanteId: string, contexto: ContextoDoGrupo): boolean {
   if (ehMestre(participanteId)) {
     return true;
   }
-  return !estado.movimentoTravado && quemConduz(estado, contexto) === participanteId;
+  return (
+    !estado.movimentoTravado &&
+    quemConduz(estado, contexto) === participanteId &&
+    !contexto.estaNumaInstancia?.(participanteId)
+  );
 }
 
 /**
  * Por que este participante não pode mover o grupo agora, quando vale avisar: o líder
- * tentando andar com o movimento travado. Para quem nunca conduz, `null` (nada a avisar).
+ * tentando andar com o movimento travado ou de dentro de uma instância. Para quem nunca conduz, `null` (nada a avisar).
  */
 export function motivoParaNaoConduzir(estado: EstadoGrupo, participanteId: string, contexto: ContextoDoGrupo): string | null {
   if (ehMestre(participanteId) || quemConduz(estado, contexto) !== participanteId) {
     return null;
   }
-  return estado.movimentoTravado ? 'O mestre travou o movimento do grupo.' : null;
+  if (estado.movimentoTravado) {
+    return 'O mestre travou o movimento do grupo.';
+  }
+  return contexto.estaNumaInstancia?.(participanteId) ? NUMA_INSTANCIA : null;
 }
 
 /** "2 h", "1 h 30 min", "45 min". */
@@ -635,6 +649,10 @@ export function permissaoNoGrupo(
   }
   if (acao.tipo === 'MoverGrupo' && estado.movimentoTravado) {
     return { ok: false, motivo: 'O mestre travou o movimento do grupo.' };
+  }
+  // Dentro de uma instância, o líder está ocupado ali: o grupo só anda no mapa-mundi quando o mestre o trouxer de volta.
+  if (acao.tipo === 'MoverGrupo' && contexto.estaNumaInstancia?.(autorId)) {
+    return { ok: false, motivo: NUMA_INSTANCIA };
   }
   if (acao.tipo === 'Descansar' && acao.lugar === 'abrigo' && !grupoNumPovoado(estado, contexto)) {
     return { ok: false, motivo: 'O líder só pede abrigo num povoado; fora dele, o mestre decide se há onde dormir.' };

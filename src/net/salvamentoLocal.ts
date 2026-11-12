@@ -24,6 +24,8 @@ import type { EstadoCompendio, LojaCompendio } from '../core/compendio';
 import { desserializarCompendio, serializarCompendio } from '../core/persistenciaCompendio';
 import type { EstadoFichas, LojaFichas } from '../core/fichas';
 import { desserializarFichas, serializarFichas } from '../core/persistenciaFichas';
+import type { EstadoInstancias, LojaInstancias } from '../core/instancias';
+import { desserializarInstancias, serializarInstancias } from '../core/persistenciaInstancias';
 import {
   desserializarRolagens,
   serializarRolagens,
@@ -383,6 +385,35 @@ export function manterNotificacoesLocal(
     DOCUMENTO_NOTIFICACOES,
     () => serializarNotificacoes(lojaNotificacoes.obterEstado()),
     [lojaNotificacoes.assinar],
+    aoFalhar,
+    { principal, rapido },
+  );
+}
+
+const DOCUMENTO_INSTANCIAS = {
+  chave: 'keikow.instancias',
+  chaveEmergencia: 'keikow.instancias.emergencia',
+  desserializar: desserializarInstancias,
+};
+
+/** Lê as instâncias guardadas neste navegador, ou `null` se ainda não houver nada. */
+export function lerInstanciasLocal(
+  principal: ArmazenamentoLocal,
+  rapido: ArmazenamentoRapido,
+): Promise<ResultadoDe<{ readonly estado: EstadoInstancias }> | null> {
+  return lerDocumento(DOCUMENTO_INSTANCIAS, { principal, rapido });
+}
+
+export function manterInstanciasLocal(
+  lojaInstancias: LojaInstancias,
+  aoFalhar: () => void,
+  principal: ArmazenamentoLocal,
+  rapido: ArmazenamentoRapido,
+): () => void {
+  return manterDocumento(
+    DOCUMENTO_INSTANCIAS,
+    () => serializarInstancias(lojaInstancias.obterEstado()),
+    [lojaInstancias.assinar],
     aoFalhar,
     { principal, rapido },
   );
