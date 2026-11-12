@@ -10,10 +10,25 @@ import {
 import { chaveHex, type CoordHex, type PontoMundo } from '../core/hex';
 import { criarLojaCampanha, ID_MESTRE, type LojaCampanha } from '../core/campanha';
 import { ehMestre } from '../core/permissoes';
-import { VISIVEL_A_TODOS } from '../core/visibilidade';
+import { paraJogadores, VISIVEL_A_TODOS } from '../core/visibilidade';
 import { criarLojaCompendio, type LojaCompendio } from '../core/compendio';
 import { criarLojaFichas, type LojaFichas } from '../core/fichas';
-import { criarLojaInstancias, instanciaDe, type LojaInstancias } from '../core/instancias';
+import {
+  CENA_MAPA,
+  cenaDe,
+  cenaNaInstancia,
+  criarLojaInstancias,
+  instanciaDe,
+  instanciasVistasPor,
+  mudancasDeCena,
+  quemEstaNaCena,
+  type Cena,
+  type LojaInstancias,
+} from '../core/instancias';
+import { BarraDaInstancia } from './BarraDaInstancia';
+import { PainelInstancia } from './PainelInstancia';
+import { PainelInstancias } from './PainelInstancias';
+import { VistaInstancia } from './VistaInstancia';
 import { criarLojaRolagens, type LojaRolagens } from '../core/rolagens';
 import { criarLojaRegras, type LojaRegras } from '../core/regrasDaCampanha';
 import { criarLojaRegistro, type LojaRegistro } from '../core/registro';
@@ -208,11 +223,34 @@ async function iniciarEditor(): Promise<EditorCarregado> {
     }
     eleicaoAntes = grupo.eleicao;
   });
+  const lojaCampanha = criarLojaCampanha(campanha?.campanha, opcoesRegistro);
+  // Quem o mestre leva a outra cena (ou volta ao mapa-mundi porque a instância foi apagada) fica sabendo.
+  let instanciasAntes = lojaInstancias.obterEstado();
+  lojaInstancias.assinar((depois) => {
+    const jogadores = lojaCampanha.obterEstado().participantes.filter((p) => p.papel === 'jogador');
+    const mudancas = mudancasDeCena(
+      instanciasAntes,
+      depois,
+      jogadores.map((p) => p.id),
+    );
+    for (const mudanca of mudancas) {
+      const nome = jogadores.find((p) => p.id === mudanca.participanteId)?.nome.trim() || 'Jogador';
+      lojaNotificacoes.notificar({
+        icone: '🚪',
+        texto:
+          mudanca.cena.tipo === 'mapa'
+            ? `${nome}, você voltou ao mapa-mundi.`
+            : `${nome}, você agora está em: ${mudanca.destino}.`,
+        visibilidade: paraJogadores([mudanca.participanteId]),
+      });
+    }
+    instanciasAntes = depois;
+  });
   return {
     loja,
     lojaGrupo,
     contextoGrupo,
-    lojaCampanha: criarLojaCampanha(campanha?.campanha, opcoesRegistro),
+    lojaCampanha,
     lojaRegistro,
     lojaCompendio,
     lojaFichas,
@@ -311,7 +349,14 @@ function Editor({
   const [hexSelecionado, setHexSelecionado] = useState<CoordHex | null>(null);
   const [passoSobMouse, setPassoSobMouse] = useState<PassoPossivel | null>(null);
   /** O painel do grupo e o diário ocupam o lugar do painel do hex: abrir um fecha os outros. */
-  const [painelLateral, setPainelLateral] = useState<'grupo' | 'diario' | null>(null);
+  const [painelLateral, setPainelLateral] = useState<'grupo' | 'diario' | 'instancias' | 'configurar' | null>(null);
+  /** A cena que o mestre está vendo: ele passeia por qualquer uma sem levar ninguém. */
+  const [cenaDoMestre, setCenaDoMestre] = useState<Cena>(CENA_MAPA);
+  /** O jogador numa instância pode espiar o mapa-mundi, sem sair dela. */
+  const [espiandoMapa, setEspiandoMapa] = useState(false);
+  const [medindo, setMedindo] = useState(false);
+  const [medida, setMedida] = useState<number | null>(null);
+  const instancias = useSyncExternalStore(lojaInstancias.assinar, lojaInstancias.obterEstado);
   const [agindoComoId, setAgindoComoId] = useState(sessao.autorId);
   const [telaAberta, setTelaAberta] = useState<Tela | null>(null);
   const [mapaTravado, setMapaTravado] = useState(lerMapaTravado);
@@ -322,6 +367,44 @@ function Editor({
   const agindoComo = campanha.participantes.find((p) => p.id === agindoComoId);
   /** Agindo como um jogador, o mapa mostra só o que ele vê e nada pode ser editado. */
   const modoJogador = !ehMestre(agindoComoId);
+  // O jogador recebe só a instância em que está (sem a descrição); o mestre, todas.
+  const instanciasVistas = useMemo(() => instanciasVistasPor(instancias, agindoComoId), [instancias, agindoComoId]);
+  const cenaDoJogador = cenaDe(instancias, agindoComoId);
+  const cenaVista: Cena = modoJogador ? (espiandoMapa ? CENA_MAPA : cenaDoJogador) : cenaDoMestre;
+  const instanciaVista =
+    cenaVista.tipo === 'instancia' ? (instanciasVistas.instancias[cenaVista.instanciaId] ?? null) : null;
+  /** Mostrando uma instância, o mapa-mundi e os painéis dele saem de cena. */
+  const naInstancia = instanciaVista !== null;
+  const chaveDaCenaDoJogador = cenaDoJogador.tipo === 'mapa' ? 'mapa' : cenaDoJogador.instanciaId;
+
+  // O mestre levou o jogador para outra cena: a tela dele acompanha, mesmo se ele estava espiando o mapa-mundi.
+  useEffect(() => {
+    setEspiandoMapa(false);
+  }, [chaveDaCenaDoJogador, agindoComoId]);
+
+  // A régua só vale com a configuração de uma instância aberta.
+  useEffect(() => {
+    if (!naInstancia || painelLateral !== 'configurar') {
+      setMedindo(false);
+      setMedida(null);
+    }
+  }, [naInstancia, painelLateral, instanciaVista?.id]);
+
+  const aoMedir = useCallback((pixels: number) => {
+    setMedida(pixels);
+    setMedindo(false);
+  }, []);
+
+  const abrirInstancia = useCallback((instanciaId: string) => {
+    setCenaDoMestre(cenaNaInstancia(instanciaId));
+    setHexSelecionado(null);
+    setPainelLateral('configurar');
+  }, []);
+
+  const voltarAoMapa = useCallback(() => {
+    setCenaDoMestre(CENA_MAPA);
+    setPainelLateral((atual) => (atual === 'configurar' ? null : atual));
+  }, []);
 
   const agirComo = useCallback(
     (participanteId: string) => {
@@ -566,13 +649,19 @@ function Editor({
           return { id, nome: ficha?.nome ?? '', imagem: ficha ? imagemDoToken(ficha) : null };
         }),
       carregarImagem: (id) => IMAGENS.endereco(id),
+      obterHexesComInstancia: () =>
+        Object.values(lojaInstancias.obterEstado().instancias).flatMap((i) => (i.hex ? [i.hex] : [])),
     });
     cenaRef.current = cena;
     return () => {
       cena.destruir();
       cenaRef.current = null;
     };
-  }, [loja, lojaGrupo, lojaFichas, manifesto, controlador, contextoGrupo]);
+  }, [loja, lojaGrupo, lojaFichas, lojaInstancias, manifesto, controlador, contextoGrupo]);
+
+  useEffect(() => {
+    cenaRef.current?.atualizarInstancias();
+  }, [instancias]);
 
   useEffect(() => {
     const aoApertarTecla = (evento: KeyboardEvent) => {
@@ -607,6 +696,23 @@ function Editor({
           lojaRegras.desfazer();
         } else if (telaAberta === 'regras' && refazer) {
           lojaRegras.refazer();
+        }
+        return;
+      }
+      if ((naInstancia || painelLateral === 'instancias') && !modoJogador) {
+        // Numa instância (ou com a lista delas aberta), os atalhos agem nas instâncias, e não no mapa-mundi.
+        if (evento.key === 'Escape') {
+          if (medindo) {
+            setMedindo(false);
+          } else if (painelLateral) {
+            setPainelLateral(null);
+          }
+        } else if (refazer) {
+          evento.preventDefault();
+          lojaInstancias.refazer();
+        } else if (desfazer) {
+          evento.preventDefault();
+          lojaInstancias.desfazer();
         }
         return;
       }
@@ -654,6 +760,10 @@ function Editor({
     hexSelecionado,
     sairDoModoJogador,
     telaAberta,
+    naInstancia,
+    medindo,
+    painelLateral,
+    lojaInstancias,
   ]);
 
   const pontoDoEvento = (evento: DragEvent<HTMLElement>): PontoMundo | null => {
@@ -784,6 +894,13 @@ function Editor({
           <button type="button" onClick={() => setTelaAberta('campanha')}>
             Campanha
           </button>
+          <button
+            type="button"
+            aria-pressed={painelLateral === 'instancias'}
+            onClick={() => setPainelLateral(painelLateral === 'instancias' ? null : 'instancias')}
+          >
+            🚪 Instâncias
+          </button>
           <button type="button" onClick={() => setTelaAberta('fichas')}>
             Fichas
           </button>
@@ -886,13 +1003,19 @@ function Editor({
       </aside>
       <div className="area-mapa">
         <main
-          className={ferramenta.tipo === 'nenhuma' ? 'map' : 'map com-ferramenta'}
+          className={`map${ferramenta.tipo === 'nenhuma' ? '' : ' com-ferramenta'}${naInstancia ? ' escondido' : ''}`}
           ref={mapRef}
           onDragOver={aoArrastarSobreMapa}
           onDragLeave={aoSairDoMapa}
           onDrop={aoSoltarNoMapa}
         />
-        {passoSobMouse && <ExplicacaoDoPasso passo={passoSobMouse} />}
+        {instanciaVista && (
+          <VistaInstancia
+            instancia={instanciaVista}
+            aoMedir={medindo && painelLateral === 'configurar' ? aoMedir : null}
+          />
+        )}
+        {passoSobMouse && !naInstancia && <ExplicacaoDoPasso passo={passoSobMouse} />}
         <div className="topo-mapa">
           {modoJogador && (
             <div className="faixa-jogador">
@@ -905,6 +1028,30 @@ function Editor({
               </button>
             </div>
           )}
+          {modoJogador && espiandoMapa && cenaDoJogador.tipo === 'instancia' && (
+            <div className="faixa-jogador">
+              <span>
+                Você está em: {instanciasVistas.instancias[cenaDoJogador.instanciaId]?.nome.trim() || 'uma instância'}
+              </span>
+              <button type="button" onClick={() => setEspiandoMapa(false)}>
+                Voltar para a instância
+              </button>
+            </div>
+          )}
+          {instanciaVista && (
+            <BarraDaInstancia
+              instancia={instanciaVista}
+              estado={instanciasVistas}
+              lojaInstancias={lojaInstancias}
+              mapa={loja.obterEstado()}
+              participantes={campanha.participantes}
+              mestre={!modoJogador}
+              configurando={painelLateral === 'configurar'}
+              aoAlternarConfiguracao={() => setPainelLateral(painelLateral === 'configurar' ? null : 'configurar')}
+              aoIrAoMapa={modoJogador ? () => setEspiandoMapa(true) : voltarAoMapa}
+            />
+          )}
+          {!naInstancia && (
           <BarraDoGrupo
             grupo={grupoVistoPor(grupo, agindoComoId)}
             lojaGrupo={lojaGrupo}
@@ -928,8 +1075,48 @@ function Editor({
               setPainelLateral(painelLateral === 'diario' ? null : 'diario');
             }}
           />
+          )}
         </div>
-        {painelLateral === 'diario' && !hexSelecionado && !modoJogador && (
+        {/* Com a lista aberta, clicar num hex só serve de filtro: o painel do hex espera a lista fechar. */}
+        {painelLateral === 'instancias' && !modoJogador && (
+          <PainelInstancias
+            lojaInstancias={lojaInstancias}
+            mapa={loja.obterEstado()}
+            participantes={campanha.participantes}
+            hexSelecionado={hexSelecionado}
+            aoAbrir={abrirInstancia}
+            aoFechar={() => setPainelLateral(null)}
+          />
+        )}
+        {painelLateral === 'configurar' && instanciaVista && !modoJogador && (
+          <PainelInstancia
+            instancia={instanciaVista}
+            lojaInstancias={lojaInstancias}
+            mapa={loja.obterEstado()}
+            jogadoresDentro={
+              quemEstaNaCena(
+                instancias,
+                cenaNaInstancia(instanciaVista.id),
+                campanha.participantes.map((p) => p.id),
+              ).length
+            }
+            medindo={medindo}
+            medida={medida}
+            aoAlternarMedicao={() => {
+              setMedida(null);
+              setMedindo(!medindo);
+            }}
+            aoEsquecerMedida={() => setMedida(null)}
+            aoAbrir={abrirInstancia}
+            aoApagada={() => {
+              // A lista aberta deixa o Ctrl+Z desfazer o apagar, mesmo de volta ao mapa-mundi.
+              setCenaDoMestre(CENA_MAPA);
+              setPainelLateral('instancias');
+            }}
+            aoFechar={() => setPainelLateral(null)}
+          />
+        )}
+        {painelLateral === 'diario' && !hexSelecionado && !modoJogador && !naInstancia && (
           <PainelDiario
             loja={loja}
             lojaGrupo={lojaGrupo}
@@ -939,7 +1126,7 @@ function Editor({
             aoFechar={() => setPainelLateral(null)}
           />
         )}
-        {painelLateral === 'grupo' && !hexSelecionado && (
+        {painelLateral === 'grupo' && !hexSelecionado && !naInstancia && (
           <PainelGrupo
             lojaGrupo={lojaGrupo}
             lojaFichas={lojaFichas}
@@ -952,7 +1139,7 @@ function Editor({
             aoFechar={() => setPainelLateral(null)}
           />
         )}
-        {hexSelecionado && modoJogador && (
+        {hexSelecionado && modoJogador && !naInstancia && (
           <PainelHexJogador
             key={chaveHex(hexSelecionado)}
             loja={loja}
@@ -963,7 +1150,7 @@ function Editor({
             aoFechar={() => setHexSelecionado(null)}
           />
         )}
-        {hexSelecionado && !modoJogador && (
+        {hexSelecionado && !modoJogador && !naInstancia && painelLateral !== 'instancias' && (
           <PainelHex
             key={chaveHex(hexSelecionado)}
             loja={loja}
@@ -971,6 +1158,8 @@ function Editor({
             participantes={campanha.participantes}
             coord={hexSelecionado}
             aoFechar={() => setHexSelecionado(null)}
+            lojaInstancias={lojaInstancias}
+            aoAbrirInstancia={abrirInstancia}
           />
         )}
       </div>

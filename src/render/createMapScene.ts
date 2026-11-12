@@ -19,6 +19,7 @@ import { criarCamadaFundoOculto } from './camadaFundoOculto';
 import { criarCamadaGrid, criarDestaqueHex, criarSelecaoHex } from './camadaGrid';
 import {
   criarCamadaMarcadores,
+  criarCamadaPortas,
   criarContornoRevelados,
 } from './camadaMarcadores';
 import { criarCamadaGrupo, type CabecaDoGrupo, type CarregarImagem } from './camadaGrupo';
@@ -54,6 +55,8 @@ export interface OpcoesCena {
   readonly obterCabecasDoGrupo: () => readonly CabecaDoGrupo[];
   /** O endereço de uma imagem guardada (retratos e tokens). */
   readonly carregarImagem: CarregarImagem;
+  /** Os hexes que têm instâncias, marcados só para o mestre. */
+  readonly obterHexesComInstancia?: () => readonly CoordHex[];
 }
 
 interface ControlesCena {
@@ -80,6 +83,8 @@ interface ControlesCena {
   moverTokenVisual(ponto: PontoMundo | null): void;
   /** Redesenha o token, por exemplo quando um membro muda de nome. */
   atualizarGrupo(): void;
+  /** Redesenha as portas dos hexes com instâncias. */
+  atualizarInstancias(): void;
   /** Leva a câmera, deslizando, até o hex do grupo. */
   centralizarNoGrupo(): void;
   /**
@@ -146,6 +151,7 @@ export function createMapScene(container: HTMLElement, opcoes: OpcoesCena): Cena
     marcarGrupoSelecionado: (selecionado) => controles?.marcarGrupoSelecionado(selecionado),
     moverTokenVisual: (ponto) => controles?.moverTokenVisual(ponto),
     atualizarGrupo: () => controles?.atualizarGrupo(),
+    atualizarInstancias: () => controles?.atualizarInstancias(),
     centralizarNoGrupo: () => controles?.centralizarNoGrupo(),
     centralizarEm: (coord, desvioNaTela) => controles?.centralizarEm(coord, desvioNaTela),
     destruir() {
@@ -190,6 +196,7 @@ function montarCena(app: Application, catalogo: Catalogo, opcoes: OpcoesCena): C
   const tiles = criarCamadaTiles(catalogo);
   const decoracoes = criarCamadaDecoracoes(catalogo, tiles.container);
   const marcadores = criarCamadaMarcadores();
+  const portas = criarCamadaPortas();
   const contornoRevelados = criarContornoRevelados();
   const grupo = criarCamadaGrupo(app.ticker, opcoes.carregarImagem);
   const selecao = criarSelecaoHex();
@@ -202,6 +209,7 @@ function montarCena(app: Application, catalogo: Catalogo, opcoes: OpcoesCena): C
     fundoOculto.frente,
     contornoRevelados.grafico,
     marcadores.grafico,
+    portas.grafico,
     grupo.trilha,
     grupo.passos,
     grupo.selecao,
@@ -229,6 +237,8 @@ function montarCena(app: Application, catalogo: Catalogo, opcoes: OpcoesCena): C
     tiles.atualizar(estado);
     decoracoes.atualizar(estado);
     marcadores.atualizar(estado);
+    // As instâncias são do mestre: no modo jogador, as portas somem.
+    portas.atualizar(modoJogador ? [] : (opcoes.obterHexesComInstancia?.() ?? []));
     grupo.atualizar(posicao);
     grupo.definirCabecas(opcoes.obterCabecasDoGrupo());
     // A trilha é só do mestre: no modo jogador, ela some.
@@ -393,6 +403,7 @@ function montarCena(app: Application, catalogo: Catalogo, opcoes: OpcoesCena): C
     marcarGrupoSelecionado: grupo.marcarSelecionado,
     moverTokenVisual: grupo.moverVisual,
     atualizarGrupo: atualizarCamadas,
+    atualizarInstancias: atualizarCamadas,
     centralizarNoGrupo: () => {
       const { posicao } = opcoes.lojaGrupo.obterEstado();
       if (posicao) {

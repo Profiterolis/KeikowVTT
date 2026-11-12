@@ -57,6 +57,7 @@ Ideias aleatórias para o KeikowVTT:
 - Camadas no mapa-mundi (ilhas flutuantes): um botão "levanta a visão" para a camada de cima; a de baixo continua aparecendo, borrada e com nuvens passando; os hexes voadores usam o `hexUnderDirt00.png` para mostrar espessura. Quem está numa ilha vê a camada de baixo inteira, como se voasse. O subterrâneo pode ser um mapa separado, sem precisar de camada.
 - Cena inicial: ao preparar a campanha ou a sessão, o mestre escolhe onde os jogadores começam (uma instância ou o mapa-mundi). (Fase 6, passo 3.)
 - Regiões no mapa-mundi: selecionar uma área com vários hexes para virar uma região com regras próprias, anotações e tags, como um país ou reino, ou uma floresta específica. Muita coisa pode vir daí no futuro (por exemplo, o sorteio do que o grupo encontra ao entrar num hex, que já depende da região). Liga com as regiões das instâncias (Fase 6, passo 9) e com o region ID.
+- Planejador de aventura (ou de sessão): um lugar onde o mestre junta tudo o que pretende usar numa sessão da campanha, arrastando instâncias, NPCs, itens, notas e o que mais for preciso, para ter tudo à mão na hora do jogo. Liga com as instâncias (Fase 6), as fichas e o compêndio.
 
 ## Deixado para depois nos planos já feitos
 

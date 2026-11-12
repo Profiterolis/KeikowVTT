@@ -6,6 +6,9 @@ import {
   cenaNaInstancia,
   criarInstanciasVazias,
   criarLojaInstancias,
+  escalaPelaMedida,
+  mudancasDeCena,
+  pixelsPorQuadrado,
   instanciaDe,
   instanciasDoHex,
   instanciasEmOrdem,
@@ -181,5 +184,28 @@ describe('loja das instâncias', () => {
     loja.desfazer();
     expect(loja.obterEstado().instancias).toEqual({});
     expect(eventos).toEqual(['CriarInstancia', 'DesfazerInstancias']);
+  });
+});
+
+describe('escala e avisos', () => {
+  it('acerta a escala por uma medida e mostra quantos pixels tem 1,5 m', () => {
+    expect(pixelsPorQuadrado(cripta)).toBeCloseTo(100);
+    expect(escalaPelaMedida(140, 1.5)).toBeCloseTo(1.5 / 140);
+    expect(escalaPelaMedida(0, 1.5)).toBeNull();
+    expect(escalaPelaMedida(100, -3)).toBeNull();
+    expect(escalaPelaMedida(1, 1000)).toBeNull();
+  });
+
+  it('diz quem mudou de cena e para onde, sem o mestre', () => {
+    const levados = aplicar(comDuas, { tipo: 'LevarParaCena', participanteIds: ['j-ana', 'j-bia'], cena: cenaNaInstancia('cripta') });
+    expect(mudancasDeCena(comDuas, levados, ['mestre', 'j-ana', 'j-bia', 'j-caio'])).toEqual([
+      { participanteId: 'j-ana', cena: cenaNaInstancia('cripta'), destino: 'Cripta' },
+      { participanteId: 'j-bia', cena: cenaNaInstancia('cripta'), destino: 'Cripta' },
+    ]);
+    const apagada = aplicar(levados, { tipo: 'ApagarInstancia', instanciaId: 'cripta' });
+    expect(mudancasDeCena(levados, apagada, ['j-ana']).map((m) => m.destino)).toEqual(['o mapa-mundi']);
+    // Quem não tem cena própria segue a cena inicial.
+    const inicial = aplicar(comDuas, { tipo: 'DefinirCenaInicial', cena: cenaNaInstancia('clareira') });
+    expect(mudancasDeCena(comDuas, inicial, ['j-caio']).map((m) => m.destino)).toEqual(['Clareira']);
   });
 });

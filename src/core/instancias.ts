@@ -165,6 +165,52 @@ export function pixelsEmMetros(instancia: Instancia, pixels: number): number {
   return pixels * instancia.metrosPorPixel;
 }
 
+/** Um quadrado de mapa de batalha mede 1,5 m: a escala se acerta dizendo quantos pixels ele tem na imagem. */
+export const METROS_DO_QUADRADO = 1.5;
+
+/** Quantos pixels da imagem cabem em 1,5 m. */
+export function pixelsPorQuadrado(instancia: Instancia): number {
+  return METROS_DO_QUADRADO / instancia.metrosPorPixel;
+}
+
+/**
+ * A escala (metros por pixel) a partir de uma medida: uma distância em pixels na imagem que
+ * vale tantos metros no jogo. `null` se a medida não serve (zero, negativa, fora dos limites).
+ */
+export function escalaPelaMedida(pixels: number, metros: number): number | null {
+  if (!Number.isFinite(pixels) || !Number.isFinite(metros) || pixels <= 0 || metros <= 0) {
+    return null;
+  }
+  const escala = metros / pixels;
+  return escala >= METROS_POR_PIXEL_MINIMO && escala <= METROS_POR_PIXEL_MAXIMO ? escala : null;
+}
+
+/** Uma mudança de cena de um jogador, para avisá-lo. */
+export interface MudancaDeCena {
+  readonly participanteId: string;
+  readonly cena: Cena;
+  /** "Cripta" ou "o mapa-mundi". */
+  readonly destino: string;
+}
+
+/**
+ * Quem, entre os participantes informados, mudou de cena de um estado para o outro: levado pelo
+ * mestre, devolvido ao mapa-mundi porque a instância foi apagada ou pela cena inicial nova.
+ */
+export function mudancasDeCena(
+  antes: EstadoInstancias,
+  depois: EstadoInstancias,
+  participanteIds: readonly string[],
+): MudancaDeCena[] {
+  return participanteIds
+    .filter((id) => !ehMestre(id) && !mesmaCena(cenaDe(antes, id), cenaDe(depois, id)))
+    .map((id) => {
+      const cena = cenaDe(depois, id);
+      const destino = cena.tipo === 'instancia' ? depois.instancias[cena.instanciaId].nome.trim() || 'Sem nome' : 'o mapa-mundi';
+      return { participanteId: id, cena, destino };
+    });
+}
+
 function comInstancia(estado: EstadoInstancias, instancia: Instancia): EstadoInstancias {
   return { ...estado, instancias: { ...estado.instancias, [instancia.id]: instancia } };
 }

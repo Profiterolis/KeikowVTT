@@ -11,6 +11,7 @@ import {
   type NivelDeVisao,
   type Visibilidade,
 } from '../core/visibilidade';
+import { instanciasDoHex, novaInstancia, type LojaInstancias } from '../core/instancias';
 import { nomeAmigavel } from './nomeAmigavel';
 import { SeletorVisibilidade } from './SeletorVisibilidade';
 
@@ -21,6 +22,46 @@ interface PainelHexProps {
   readonly participantes: readonly Participante[];
   readonly coord: CoordHex;
   readonly aoFechar: () => void;
+  readonly lojaInstancias: LojaInstancias;
+  readonly aoAbrirInstancia: (instanciaId: string) => void;
+}
+
+/** As instâncias presas a este hex, com "Criar instância aqui". */
+function SecaoInstanciasDoHex({
+  lojaInstancias,
+  coord,
+  nomeDoHex,
+  aoAbrir,
+}: {
+  readonly lojaInstancias: LojaInstancias;
+  readonly coord: CoordHex;
+  readonly nomeDoHex: string;
+  readonly aoAbrir: (instanciaId: string) => void;
+}) {
+  const estado = useSyncExternalStore(lojaInstancias.assinar, lojaInstancias.obterEstado);
+  const lista = instanciasDoHex(estado, coord);
+  const criar = () => {
+    const instancia = novaInstancia(crypto.randomUUID(), nomeDoHex ? `Instância em ${nomeDoHex}` : 'Nova instância', coord);
+    lojaInstancias.despachar({ tipo: 'CriarInstancia', instancia });
+    aoAbrir(instancia.id);
+  };
+  return (
+    <section className="painel-secao painel-instancias-do-hex">
+      <h3>🚪 Instâncias deste hex</h3>
+      <ul>
+        {lista.map((instancia) => (
+          <li key={instancia.id}>
+            <button type="button" className="painel-adicionar" onClick={() => aoAbrir(instancia.id)}>
+              {instancia.nome.trim() || 'Sem nome'} → abrir
+            </button>
+          </li>
+        ))}
+      </ul>
+      <button type="button" className="painel-adicionar" onClick={criar}>
+        + Criar instância aqui
+      </button>
+    </section>
+  );
 }
 
 const DESCRICAO_NIVEL: Readonly<Record<NivelDeVisao, string>> = {
@@ -29,7 +70,7 @@ const DESCRICAO_NIVEL: Readonly<Record<NivelDeVisao, string>> = {
   oculto: 'Os jogadores não veem este hex.',
 };
 
-export function PainelHex({ loja, lojaGrupo, participantes, coord, aoFechar }: PainelHexProps) {
+export function PainelHex({ loja, lojaGrupo, participantes, coord, aoFechar, lojaInstancias, aoAbrirInstancia }: PainelHexProps) {
   const estado = useSyncExternalStore(loja.assinar, loja.obterEstado);
   const { posicao } = useSyncExternalStore(lojaGrupo.assinar, lojaGrupo.obterEstado);
   const hex = hexEm(estado, coord);
@@ -192,6 +233,12 @@ export function PainelHex({ loja, lojaGrupo, participantes, coord, aoFechar }: P
             SO_MESTRE,
             '+ Adicionar nota secreta',
           )}
+          <SecaoInstanciasDoHex
+            lojaInstancias={lojaInstancias}
+            coord={coord}
+            nomeDoHex={hex.nome.trim()}
+            aoAbrir={aoAbrirInstancia}
+          />
         </>
       )}
     </aside>
