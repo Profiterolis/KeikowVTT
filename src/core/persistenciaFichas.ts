@@ -189,6 +189,7 @@ function lerFicha(valor: unknown, onde: string, versaoEntradas: number): Ficha {
     nome: texto(valor, 'nome', onde),
     ...lerImagemOpcional(valor, 'retrato', onde),
     ...lerImagemOpcional(valor, 'token', onde),
+    ...(valor.daInstancia === undefined ? {} : { daInstancia: texto(valor, 'daInstancia', onde) }),
     donoId: texto(valor, 'donoId', onde),
     visibilidade: lerVisibilidade(valor.visibilidade, onde),
     edicaoLiberada: booleano(valor, 'edicaoLiberada', onde),

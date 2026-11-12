@@ -28,7 +28,25 @@ import {
 import { BarraDaInstancia } from './BarraDaInstancia';
 import { PainelInstancia } from './PainelInstancia';
 import { PainelInstancias } from './PainelInstancias';
-import { VistaInstancia } from './VistaInstancia';
+import { VistaInstancia, type ArrasteDeToken } from './VistaInstancia';
+import { PainelTokens } from './PainelTokens';
+import { JanelaFicha } from './JanelaFicha';
+import { JanelaToken } from './JanelaToken';
+import { MenuDeContexto, type ItemDoMenu, type MenuAberto } from './MenuDeContexto';
+import type { DestinoIrAte } from './MenuIrAte';
+import {
+  dentroDoMapa,
+  nomeNumerado,
+  novoToken,
+  permissaoParaMover,
+  tokenDaFicha,
+  tokensVistos,
+  type ContextoDasInstancias,
+  type MudancasNoToken,
+} from '../core/tokens';
+import type { EventosDosTokens } from '../render/camadaTokens';
+import { fichaDeMonstro } from '../core/fichas';
+import { podeVerFicha } from '../core/permissoes';
 import { criarLojaRolagens, type LojaRolagens } from '../core/rolagens';
 import { criarLojaRegras, type LojaRegras } from '../core/regrasDaCampanha';
 import { criarLojaRegistro, type LojaRegistro } from '../core/registro';
@@ -129,6 +147,8 @@ interface EditorCarregado {
   readonly lojaCompendio: LojaCompendio;
   readonly lojaFichas: LojaFichas;
   readonly lojaInstancias: LojaInstancias;
+  /** O que as instâncias consultam das fichas: quem controla cada uma. */
+  readonly contextoInstancias: ContextoDasInstancias;
   readonly lojaRolagens: LojaRolagens;
   readonly lojaNotificacoes: LojaNotificacoes;
   readonly lojaRegras: LojaRegras;
@@ -191,7 +211,15 @@ async function iniciarEditor(): Promise<EditorCarregado> {
     // Criando o personagem, o jogador só fica com os itens dos kits oferecidos.
     itensDaCriacao: (ficha) => problemaNosItensDaCriacao(ficha, lojaCompendio.obterEstado(), lojaRegras.obterEstado()),
   }));
-  const lojaInstancias = criarLojaInstancias(salvasInstancias?.ok ? salvasInstancias.estado : undefined, opcoesRegistro);
+  // Um jogador move só os tokens das fichas que controla.
+  const contextoInstancias: ContextoDasInstancias = {
+    obterDonoDaFicha: (fichaId) => lojaFichas.obterEstado().fichas[fichaId]?.donoId ?? null,
+  };
+  const lojaInstancias = criarLojaInstancias(
+    salvasInstancias?.ok ? salvasInstancias.estado : undefined,
+    opcoesRegistro,
+    contextoInstancias,
+  );
   // O grupo consulta o mapa (terreno de cada passo), as regras de viagem, quem controla cada ficha e quem está numa instância.
   const contextoGrupo: ContextoDoGrupo = {
     obterMapa: loja.obterEstado,
@@ -255,6 +283,7 @@ async function iniciarEditor(): Promise<EditorCarregado> {
     lojaCompendio,
     lojaFichas,
     lojaInstancias,
+    contextoInstancias,
     // Um registro de rolagens ilegível não impede de abrir: começa vazio.
     lojaRolagens: criarLojaRolagens(salvasRolagens?.ok ? salvasRolagens.rolagens : []),
     lojaNotificacoes,
@@ -330,6 +359,7 @@ function Editor({
   lojaCompendio,
   lojaFichas,
   lojaInstancias,
+  contextoInstancias,
   lojaRolagens,
   lojaNotificacoes,
   lojaRegras,
@@ -349,13 +379,27 @@ function Editor({
   const [hexSelecionado, setHexSelecionado] = useState<CoordHex | null>(null);
   const [passoSobMouse, setPassoSobMouse] = useState<PassoPossivel | null>(null);
   /** O painel do grupo e o diário ocupam o lugar do painel do hex: abrir um fecha os outros. */
-  const [painelLateral, setPainelLateral] = useState<'grupo' | 'diario' | 'instancias' | 'configurar' | null>(null);
+  const [painelLateral, setPainelLateral] = useState<'grupo' | 'diario' | 'instancias' | 'configurar' | 'tokens' | null>(null);
   /** A cena que o mestre está vendo: ele passeia por qualquer uma sem levar ninguém. */
   const [cenaDoMestre, setCenaDoMestre] = useState<Cena>(CENA_MAPA);
   /** O jogador numa instância pode espiar o mapa-mundi, sem sair dela. */
   const [espiandoMapa, setEspiandoMapa] = useState(false);
   const [medindo, setMedindo] = useState(false);
   const [medida, setMedida] = useState<number | null>(null);
+  /** A régua de distâncias da instância, de todos. */
+  const [reguaLigada, setReguaLigada] = useState(false);
+  /** A ficha de um token aberta sobre a instância. */
+  const [fichaAberta, setFichaAberta] = useState<string | null>(null);
+  const [menuDoToken, setMenuDoToken] = useState<MenuAberto | null>(null);
+  /** O token cujo nome no mapa e tamanho o mestre está mudando. */
+  const [tokenEmConfiguracao, setTokenEmConfiguracao] = useState<string | null>(null);
+  /** O "Ir até" numa instância: o ponto para a câmera ir. */
+  const [focoNaInstancia, setFocoNaInstancia] = useState<{
+    readonly instanciaId: string;
+    readonly x: number;
+    readonly y: number;
+    readonly vez: number;
+  } | null>(null);
   const instancias = useSyncExternalStore(lojaInstancias.assinar, lojaInstancias.obterEstado);
   const [agindoComoId, setAgindoComoId] = useState(sessao.autorId);
   const [telaAberta, setTelaAberta] = useState<Tela | null>(null);
@@ -389,6 +433,228 @@ function Editor({
       setMedida(null);
     }
   }, [naInstancia, painelLateral, instanciaVista?.id]);
+
+  // Fora de uma instância, a régua, a ficha aberta e o menu dos tokens fecham.
+  useEffect(() => {
+    setReguaLigada(false);
+    setMenuDoToken(null);
+    setTokenEmConfiguracao(null);
+    if (!naInstancia) {
+      setFichaAberta(null);
+    }
+  }, [naInstancia, instanciaVista?.id, agindoComoId]);
+
+  // A régua da escala e a de distâncias usam o mesmo botão: ligar uma desliga a outra.
+  useEffect(() => {
+    if (medindo) {
+      setReguaLigada(false);
+    }
+  }, [medindo]);
+
+  const tokensDaVista = useMemo(
+    () =>
+      instanciaVista
+        ? tokensVistos(instancias, instanciaVista, agindoComoId, fichas.fichas, regras, contextoInstancias)
+        : [],
+    [instancias, instanciaVista, agindoComoId, fichas, regras, contextoInstancias],
+  );
+
+  const instanciaVistaId = instanciaVista?.id ?? null;
+
+  /** O menu do botão direito de um token: o que cada um pode fazer com ele. */
+  const abrirMenuDoToken = useCallback(
+    (tokenId: string, x: number, y: number) => {
+      if (!instanciaVistaId) {
+        return;
+      }
+      const instancia = lojaInstancias.obterEstado().instancias[instanciaVistaId];
+      const token = instancia?.tokens[tokenId];
+      const ficha = token ? lojaFichas.obterEstado().fichas[token.fichaId] : undefined;
+      if (!token || !ficha) {
+        return;
+      }
+      const mestre = ehMestre(sessao.autorId);
+      const editar = (mudancas: MudancasNoToken) =>
+        lojaInstancias.despachar({ tipo: 'EditarToken', instanciaId: instancia.id, tokenId, mudancas });
+      const visivel = podeVerFicha(ficha, sessao.autorId);
+      const itens: ItemDoMenu[] = [
+        {
+          rotulo: 'Abrir ficha',
+          aoEscolher: () => setFichaAberta(ficha.id),
+          desativado: !visivel,
+          dica: visivel ? undefined : 'Você não vê esta ficha.',
+        },
+      ];
+      if (mestre) {
+        itens.push(
+          {
+            rotulo: token.escondido ? '👁️ Mostrar aos jogadores' : '👁️‍🗨️ Esconder dos jogadores',
+            separar: true,
+            aoEscolher: () => editar({ escondido: !token.escondido }),
+          },
+          {
+            rotulo: token.travado ? '🔓 Destravar o token' : '🔒 Travar o token',
+            dica: 'Travado, o dono não move o token; o mestre move.',
+            aoEscolher: () => editar({ travado: !token.travado }),
+          },
+          { rotulo: 'Nome no mapa e tamanho…', aoEscolher: () => setTokenEmConfiguracao(tokenId) },
+          {
+            rotulo: 'Tirar do mapa',
+            separar: true,
+            dica: 'O token sai do mapa; a ficha continua existindo.',
+            aoEscolher: () => lojaInstancias.despachar({ tipo: 'TirarToken', instanciaId: instancia.id, tokenId }),
+          },
+        );
+        if (ficha.daInstancia) {
+          itens.push({
+            rotulo: 'Apagar (token e ficha)',
+            dica: 'Para monstros postos no mapa a partir do compêndio.',
+            aoEscolher: () => {
+              if (window.confirm(`Apagar "${ficha.nome.trim() || 'Sem nome'}" do mapa e a ficha dele?`)) {
+                lojaInstancias.despachar({ tipo: 'TirarToken', instanciaId: instancia.id, tokenId });
+                lojaFichas.despachar({ tipo: 'RemoverFicha', fichaId: ficha.id });
+              }
+            },
+          });
+        }
+      }
+      setMenuDoToken({ x, y, titulo: token.nomeNoMapa.trim() || ficha.nome.trim() || 'Token', itens });
+    },
+    [instanciaVistaId, lojaInstancias, lojaFichas, sessao],
+  );
+
+  const eventosDosTokens = useMemo<EventosDosTokens | null>(() => {
+    if (!instanciaVistaId) {
+      return null;
+    }
+    return {
+      aoMover(tokenId, x, y) {
+        const antes = lojaInstancias.obterEstado().instancias[instanciaVistaId];
+        if (!antes) {
+          return false;
+        }
+        lojaInstancias.despachar({ tipo: 'MoverToken', instanciaId: instanciaVistaId, tokenId, x, y });
+        const depois = lojaInstancias.obterEstado().instancias[instanciaVistaId]?.tokens[tokenId];
+        const alvo = dentroDoMapa(antes, x, y);
+        return depois !== undefined && depois.x === alvo.x && depois.y === alvo.y;
+      },
+      aoMenu: abrirMenuDoToken,
+      aoRecusar(tokenId) {
+        const permissao = permissaoParaMover(lojaInstancias.obterEstado(), instanciaVistaId, tokenId, sessao.autorId, contextoInstancias);
+        if (!permissao.ok) {
+          setMensagem({ tipo: 'aviso', texto: permissao.motivo });
+        }
+      },
+    };
+  }, [instanciaVistaId, lojaInstancias, abrirMenuDoToken, sessao, contextoInstancias]);
+
+  /** O mestre soltou no mapa uma ficha ou um monstro do compêndio, vindos da gaveta de tokens. */
+  const soltarToken = useCallback(
+    (arraste: ArrasteDeToken, ponto: PontoMundo) => {
+      if (!instanciaVistaId) {
+        return;
+      }
+      if (arraste.tipo === 'ficha') {
+        // A ficha que já estava em outro mapa leva junto o nome no mapa, o tamanho e as travas.
+        const antigo = tokenDaFicha(lojaInstancias.obterEstado(), arraste.fichaId)?.token;
+        const token = antigo
+          ? { ...antigo, x: ponto.x, y: ponto.y }
+          : novoToken(crypto.randomUUID(), arraste.fichaId, ponto.x, ponto.y);
+        // O jogador que controla a ficha vai junto para a instância.
+        const dono = lojaFichas.obterEstado().fichas[arraste.fichaId]?.donoId;
+        const levar = dono && !ehMestre(dono) ? [dono] : [];
+        lojaInstancias.despachar({ tipo: 'ColocarToken', instanciaId: instanciaVistaId, token, levar });
+        return;
+      }
+      const monstro = lojaCompendio.obterEstado().entradas[arraste.entradaId];
+      if (monstro?.tipo !== 'monstro') {
+        return;
+      }
+      const nomes = Object.values(lojaFichas.obterEstado().fichas).map((f) => f.nome);
+      const ficha = {
+        ...fichaDeMonstro(monstro, crypto.randomUUID()),
+        nome: nomeNumerado(monstro.nome, nomes),
+        daInstancia: instanciaVistaId,
+      };
+      lojaFichas.despachar({ tipo: 'CriarFicha', ficha });
+      if (lojaFichas.obterEstado().fichas[ficha.id]) {
+        lojaInstancias.despachar({
+          tipo: 'ColocarToken',
+          instanciaId: instanciaVistaId,
+          token: novoToken(crypto.randomUUID(), ficha.id, ponto.x, ponto.y),
+        });
+      }
+    },
+    [instanciaVistaId, lojaInstancias, lojaFichas, lojaCompendio],
+  );
+
+  /** A câmera vai até um ponto de uma instância (abrindo-a, para o mestre). */
+  const irAteNaInstancia = useCallback((instanciaId: string, ponto: PontoMundo | null) => {
+    if (!ehMestre(sessao.autorId)) {
+      if (ponto) {
+        setFocoNaInstancia((antes) => ({ instanciaId, ...ponto, vez: (antes?.vez ?? 0) + 1 }));
+      }
+      return;
+    }
+    setCenaDoMestre(cenaNaInstancia(instanciaId));
+    setHexSelecionado(null);
+    // Sem um ponto, a instância aparece inteira (o enquadramento de sempre).
+    setFocoNaInstancia((antes) => (ponto ? { instanciaId, ...ponto, vez: (antes?.vez ?? 0) + 1 } : null));
+  }, [sessao]);
+
+  const irAteOGrupo = useCallback(() => {
+    setCenaDoMestre(CENA_MAPA);
+    setPainelLateral((atual) => (atual === 'configurar' || atual === 'tokens' ? null : atual));
+    cenaRef.current?.centralizarNoGrupo();
+  }, []);
+
+  /**
+   * Os destinos do "📍 Ir até". O mestre escolhe o grupo ou um jogador (que pode estar numa
+   * instância, com o grupo separado). O jogador numa instância escolhe um personagem que vê ali.
+   */
+  const destinosIrAte = useMemo<DestinoIrAte[]>(() => {
+    if (modoJogador) {
+      return tokensDaVista
+        .filter((t) => t.tipo === 'personagem')
+        .map((t) => ({
+          chave: t.id,
+          rotulo: t.nome,
+          aoEscolher: () => instanciaVista && irAteNaInstancia(instanciaVista.id, { x: t.x, y: t.y }),
+        }));
+    }
+    const grupoDestino: DestinoIrAte = {
+      chave: 'grupo',
+      rotulo: 'O grupo',
+      onde: 'mapa-mundi',
+      aoEscolher: irAteOGrupo,
+      desativado: !grupo.posicao,
+      dica: grupo.posicao ? undefined : 'O grupo ainda não foi posicionado.',
+    };
+    const jogadores = campanha.participantes.filter((p) => p.papel === 'jogador');
+    return [
+      grupoDestino,
+      ...jogadores.map((p): DestinoIrAte => {
+        const cena = cenaDe(instancias, p.id);
+        const nome = p.nome.trim() || 'Jogador';
+        if (cena.tipo === 'mapa') {
+          return { chave: p.id, rotulo: nome, onde: 'mapa-mundi', aoEscolher: irAteOGrupo, desativado: !grupo.posicao };
+        }
+        const instancia = instancias.instancias[cena.instanciaId];
+        // O token de um personagem do jogador ali (personagens antes de NPCs); sem token, a instância inteira.
+        const meus = Object.values(instancia.tokens)
+          .map((token) => ({ token, ficha: fichas.fichas[token.fichaId] }))
+          .filter(({ ficha }) => ficha?.donoId === p.id)
+          .sort((a, b) => (a.ficha?.tipo === 'personagem' ? 0 : 1) - (b.ficha?.tipo === 'personagem' ? 0 : 1));
+        const alvo = meus[0]?.token ?? null;
+        return {
+          chave: p.id,
+          rotulo: nome,
+          onde: instancia.nome.trim() || 'Sem nome',
+          aoEscolher: () => irAteNaInstancia(instancia.id, alvo ? { x: alvo.x, y: alvo.y } : null),
+        };
+      }),
+    ];
+  }, [modoJogador, tokensDaVista, instanciaVista, irAteNaInstancia, irAteOGrupo, grupo.posicao, campanha, instancias, fichas]);
 
   const aoMedir = useCallback((pixels: number) => {
     setMedida(pixels);
@@ -699,6 +965,15 @@ function Editor({
         }
         return;
       }
+      if (naInstancia && evento.key === 'Escape' && (reguaLigada || fichaAberta)) {
+        // A régua e a ficha aberta fecham primeiro, para o mestre e para o jogador.
+        if (reguaLigada) {
+          setReguaLigada(false);
+        } else {
+          setFichaAberta(null);
+        }
+        return;
+      }
       if ((naInstancia || painelLateral === 'instancias') && !modoJogador) {
         // Numa instância (ou com a lista delas aberta), os atalhos agem nas instâncias, e não no mapa-mundi.
         if (evento.key === 'Escape') {
@@ -764,6 +1039,8 @@ function Editor({
     medindo,
     painelLateral,
     lojaInstancias,
+    reguaLigada,
+    fichaAberta,
   ]);
 
   const pontoDoEvento = (evento: DragEvent<HTMLElement>): PontoMundo | null => {
@@ -1013,6 +1290,11 @@ function Editor({
           <VistaInstancia
             instancia={instanciaVista}
             aoMedir={medindo && painelLateral === 'configurar' ? aoMedir : null}
+            regua={reguaLigada}
+            tokens={tokensDaVista}
+            eventos={eventosDosTokens}
+            aoSoltar={modoJogador ? null : soltarToken}
+            foco={focoNaInstancia?.instanciaId === instanciaVista.id ? focoNaInstancia : null}
           />
         )}
         {passoSobMouse && !naInstancia && <ExplicacaoDoPasso passo={passoSobMouse} />}
@@ -1048,6 +1330,14 @@ function Editor({
               mestre={!modoJogador}
               configurando={painelLateral === 'configurar'}
               aoAlternarConfiguracao={() => setPainelLateral(painelLateral === 'configurar' ? null : 'configurar')}
+              tokensAbertos={painelLateral === 'tokens'}
+              aoAlternarTokens={() => setPainelLateral(painelLateral === 'tokens' ? null : 'tokens')}
+              regua={reguaLigada}
+              destinosIrAte={destinosIrAte}
+              aoAlternarRegua={() => {
+                setMedindo(false);
+                setReguaLigada(!reguaLigada);
+              }}
               aoIrAoMapa={modoJogador ? () => setEspiandoMapa(true) : voltarAoMapa}
             />
           )}
@@ -1062,6 +1352,7 @@ function Editor({
               (id) => membrosPresentes(grupo, contextoGrupo).includes(id) && fichas.fichas[id]?.donoId === agindoComoId,
             )}
             aoIrAteOGrupo={() => cenaRef.current?.centralizarNoGrupo()}
+            destinosIrAte={modoJogador ? undefined : destinosIrAte}
             aoAlternarPainel={() => {
               // O painel do grupo e o do hex ocupam o mesmo lugar: um fecha o outro.
               setHexSelecionado(null);
@@ -1114,6 +1405,41 @@ function Editor({
               setPainelLateral('instancias');
             }}
             aoFechar={() => setPainelLateral(null)}
+          />
+        )}
+        {painelLateral === 'tokens' && instanciaVista && !modoJogador && instancias.instancias[instanciaVista.id] && (
+          <PainelTokens
+            instancia={instancias.instancias[instanciaVista.id]}
+            estado={instancias}
+            fichas={fichas}
+            compendio={lojaCompendio.obterEstado()}
+            aoTirar={(tokenId) => lojaInstancias.despachar({ tipo: 'TirarToken', instanciaId: instanciaVista.id, tokenId })}
+            aoAbrirFicha={setFichaAberta}
+            aoFechar={() => setPainelLateral(null)}
+          />
+        )}
+        {fichaAberta && naInstancia && (
+          <JanelaFicha
+            key={fichaAberta}
+            fichaId={fichaAberta}
+            lojaFichas={lojaFichas}
+            lojaCompendio={lojaCompendio}
+            lojaRolagens={lojaRolagens}
+            participantes={campanha.participantes}
+            agindoComoId={agindoComoId}
+            aoFechar={() => setFichaAberta(null)}
+          />
+        )}
+        {menuDoToken && <MenuDeContexto menu={menuDoToken} aoFechar={() => setMenuDoToken(null)} />}
+        {tokenEmConfiguracao && instanciaVista && instancias.instancias[instanciaVista.id]?.tokens[tokenEmConfiguracao] && (
+          <JanelaToken
+            token={instancias.instancias[instanciaVista.id].tokens[tokenEmConfiguracao]}
+            ficha={fichas.fichas[instancias.instancias[instanciaVista.id].tokens[tokenEmConfiguracao].fichaId]}
+            aoSalvar={(mudancas) => {
+              lojaInstancias.despachar({ tipo: 'EditarToken', instanciaId: instanciaVista.id, tokenId: tokenEmConfiguracao, mudancas });
+              setTokenEmConfiguracao(null);
+            }}
+            aoFechar={() => setTokenEmConfiguracao(null)}
           />
         )}
         {painelLateral === 'diario' && !hexSelecionado && !modoJogador && !naInstancia && (

@@ -152,6 +152,15 @@ export function TelaFichas({
     }
   };
 
+  const itemDaLista = (ficha: Ficha) => (
+    <li key={ficha.id}>
+      <button type="button" aria-current={ficha.id === selecionadaId} onClick={() => setSelecionadaId(ficha.id)}>
+        <span>{ficha.nome || '(sem nome)'}</span>
+        <small>{ficha.emCriacao ? 'Em criação' : resumoDaFicha(ficha)}</small>
+      </button>
+    </li>
+  );
+
   return (
     <div className="tela-sobreposta" role="dialog" aria-label="Fichas">
       {dandoKit && mestre && (
@@ -241,19 +250,15 @@ export function TelaFichas({
           )}
           <p className="tela-dica">{fichas.length === 1 ? '1 ficha' : `${fichas.length} fichas`}</p>
           <ul>
-            {fichas.map((ficha) => (
-              <li key={ficha.id}>
-                <button
-                  type="button"
-                  aria-current={ficha.id === selecionadaId}
-                  onClick={() => setSelecionadaId(ficha.id)}
-                >
-                  <span>{ficha.nome || '(sem nome)'}</span>
-                  <small>{ficha.emCriacao ? 'Em criação' : resumoDaFicha(ficha)}</small>
-                </button>
-              </li>
-            ))}
+            {fichas.filter((f) => !f.daInstancia).map(itemDaLista)}
           </ul>
+          {/* Monstros postos num mapa a partir do compêndio: muitos e descartáveis, ficam à parte. */}
+          {fichas.some((f) => f.daInstancia) && (
+            <details className="fichas-das-instancias" open={selecionada?.daInstancia !== undefined}>
+              <summary>Monstros das instâncias ({fichas.filter((f) => f.daInstancia).length})</summary>
+              <ul>{fichas.filter((f) => f.daInstancia).map(itemDaLista)}</ul>
+            </details>
+          )}
         </aside>
         <main className="compendio-editor">
           {selecionada && selecionada.emCriacao && podeEditarTudo(selecionada, agindoComoId) ? (
@@ -334,7 +339,7 @@ interface EditorFichaProps {
   readonly aoApagar: () => void;
 }
 
-function EditorFicha({ ficha, compendio, participantes, lojaFichas, lojaRolagens, autorId, secreta, outras, aoApagar }: EditorFichaProps) {
+export function EditorFicha({ ficha, compendio, participantes, lojaFichas, lojaRolagens, autorId, secreta, outras, aoApagar }: EditorFichaProps) {
   const sessaoDeFoco = useRef(0);
   const [explicando, setExplicando] = useState<Explicando | null>(null);
   const [classeEscolhida, setClasseEscolhida] = useState('');

@@ -10,13 +10,15 @@ import {
   type LojaInstancias,
 } from '../core/instancias';
 import type { EstadoMapa } from '../core/mapa';
+import { MenuIrAte, type DestinoIrAte } from './MenuIrAte';
 import { textoDoHex } from './PainelInstancias';
 
 const nomeDe = (p: Participante) => p.nome.trim() || 'Sem nome';
 
 /**
- * A barra no topo de uma instância. Todos veem o nome e o botão do mapa-mundi; o mestre também
- * vê quem está ali, leva jogadores para cá (ou de volta) e abre a configuração.
+ * A barra no topo de uma instância. Todos veem o nome, a régua e o botão do mapa-mundi; o mestre
+ * também vê quem está ali, leva jogadores para cá (ou de volta), abre os tokens e a configuração
+ * e trava o movimento dos jogadores.
  */
 export function BarraDaInstancia({
   instancia,
@@ -27,6 +29,11 @@ export function BarraDaInstancia({
   mestre,
   configurando,
   aoAlternarConfiguracao,
+  tokensAbertos,
+  aoAlternarTokens,
+  regua,
+  aoAlternarRegua,
+  destinosIrAte,
   aoIrAoMapa,
 }: {
   readonly instancia: Instancia;
@@ -37,6 +44,12 @@ export function BarraDaInstancia({
   readonly mestre: boolean;
   readonly configurando: boolean;
   readonly aoAlternarConfiguracao: () => void;
+  readonly tokensAbertos: boolean;
+  readonly aoAlternarTokens: () => void;
+  readonly regua: boolean;
+  readonly aoAlternarRegua: () => void;
+  /** O mestre vai até o grupo ou um jogador; o jogador, até um personagem desta instância. */
+  readonly destinosIrAte: readonly DestinoIrAte[];
   /** O mestre volta a ver o mapa-mundi; o jogador só espia, sem sair da instância. */
   readonly aoIrAoMapa: () => void;
 }) {
@@ -67,6 +80,37 @@ export function BarraDaInstancia({
         <button type="button" onClick={aoIrAoMapa} title={mestre ? undefined : 'Só para olhar: você continua aqui'}>
           {mestre ? '← Mapa-mundi' : '🗺️ Espiar o mapa-mundi'}
         </button>
+        <MenuIrAte destinos={destinosIrAte} />
+        <button
+          type="button"
+          aria-pressed={regua}
+          onClick={aoAlternarRegua}
+          title="Aperte, arraste e solte no mapa para medir em metros (Esc desliga)"
+        >
+          📏 Régua
+        </button>
+        {mestre && (
+          <button type="button" aria-pressed={tokensAbertos} onClick={aoAlternarTokens}>
+            🧍 Tokens
+          </button>
+        )}
+        {mestre && (
+          <button
+            type="button"
+            aria-pressed={instancia.movimentoTravado}
+            title="Travado, nenhum jogador move tokens aqui; o mestre continua movendo"
+            onClick={() =>
+              lojaInstancias.despachar({
+                tipo: 'EditarInstancia',
+                instanciaId: instancia.id,
+                mudancas: { movimentoTravado: !instancia.movimentoTravado },
+              })
+            }
+          >
+            {instancia.movimentoTravado ? '⛔ Movimento travado' : '🔓 Movimento livre'}
+          </button>
+        )}
+        {!mestre && instancia.movimentoTravado && <span className="barra-grupo-aviso">⛔ O mestre travou o movimento</span>}
         {mestre && (
           <button type="button" aria-pressed={configurando} onClick={aoAlternarConfiguracao}>
             ⚙️ Configurar

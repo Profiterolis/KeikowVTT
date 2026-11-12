@@ -7,15 +7,25 @@
  * jogadores de uma cena a outra. O próprio mestre passeia por qualquer cena sem levar ninguém,
  * então a cena dele não é guardada.
  *
- * Os tokens, as paredes, a luz, os itens e as regiões chegam nos passos seguintes da fase,
+ * Os tokens (passo 4) ficam dentro de cada instância; as regras deles estão em `tokens.ts`.
+ * As paredes, a luz, os itens e as regiões chegam nos passos seguintes da fase,
  * cada um como um campo novo da instância.
  */
 import type { CoordHex } from './hex';
 import { chaveHex } from './hex';
 import { criarLojaComHistorico, type LojaComHistorico } from './lojaHistorico';
 import type { EstadoMapa } from './mapa';
-import { soOMestre } from './permissoes';
 import type { OpcoesRegistro } from './registro';
+import {
+  conferirInstancias,
+  dentroDoMapa,
+  problemaNoToken,
+  SEM_FICHAS,
+  tamanhoValido,
+  type ContextoDasInstancias,
+  type MudancasNoToken,
+  type TokenNaInstancia,
+} from './tokens';
 import { ehMestre } from './visibilidade';
 
 /** Onde um jogador está: no mapa-mundi ou dentro de uma instância. */
@@ -45,6 +55,10 @@ export interface Instancia {
   readonly altura: number;
   /** Quantos metros cada pixel representa. */
   readonly metrosPorPixel: number;
+  /** Os tokens no mapa, pelo id do token. */
+  readonly tokens: Readonly<Record<string, TokenNaInstancia>>;
+  /** Trava do mestre: nenhum jogador move tokens nesta instância. */
+  readonly movimentoTravado: boolean;
 }
 
 export interface EstadoInstancias {
@@ -80,6 +94,8 @@ export function novaInstancia(id: string, nome: string, hex: CoordHex | null): I
     largura: LARGURA_PADRAO,
     altura: ALTURA_PADRAO,
     metrosPorPixel: METROS_POR_PIXEL_PADRAO,
+    tokens: {},
+    movimentoTravado: false,
   };
 }
 
@@ -99,10 +115,21 @@ export function problemaNaInstancia(instancia: Instancia): string | null {
   if (instancia.hex && (!Number.isInteger(instancia.hex.q) || !Number.isInteger(instancia.hex.r))) {
     return 'O hex da instância não é válido.';
   }
+  for (const [id, token] of Object.entries(instancia.tokens)) {
+    const problema = id === token.id ? problemaNoToken(token) : 'Um token está guardado com o id errado.';
+    if (problema) {
+      return problema;
+    }
+  }
+  const fichas = Object.values(instancia.tokens).map((t) => t.fichaId);
+  if (new Set(fichas).size !== fichas.length) {
+    return 'Uma ficha tem dois tokens na mesma instância.';
+  }
   return null;
 }
 
-export type MudancasNaInstancia = Partial<Omit<Instancia, 'id'>>;
+/** Os tokens mudam pelas ações próprias deles, não por aqui. */
+export type MudancasNaInstancia = Partial<Omit<Instancia, 'id' | 'tokens'>>;
 
 export type AcaoInstancias =
   | { readonly tipo: 'CriarInstancia'; readonly instancia: Instancia }
@@ -115,6 +142,20 @@ export type AcaoInstancias =
   /** Leva um ou vários jogadores para uma cena. */
   | { readonly tipo: 'LevarParaCena'; readonly participanteIds: readonly string[]; readonly cena: Cena }
   | { readonly tipo: 'DefinirCenaInicial'; readonly cena: Cena }
+  /**
+   * Põe o token de uma ficha no mapa. Se a ficha já tinha um token (nesta ou em outra instância),
+   * ele sai de lá: uma criatura não está em dois lugares. `levar` são os jogadores que vão junto
+   * para a instância (quem controla a ficha), no mesmo passo de desfazer.
+   */
+  | {
+      readonly tipo: 'ColocarToken';
+      readonly instanciaId: string;
+      readonly token: TokenNaInstancia;
+      readonly levar?: readonly string[];
+    }
+  | { readonly tipo: 'MoverToken'; readonly instanciaId: string; readonly tokenId: string; readonly x: number; readonly y: number }
+  | { readonly tipo: 'EditarToken'; readonly instanciaId: string; readonly tokenId: string; readonly mudancas: MudancasNoToken }
+  | { readonly tipo: 'TirarToken'; readonly instanciaId: string; readonly tokenId: string }
   | { readonly tipo: 'CarregarInstancias'; readonly estado: EstadoInstancias };
 
 /** Uma cena que aponta para uma instância que não existe vira o mapa-mundi. */
@@ -215,8 +256,54 @@ function comInstancia(estado: EstadoInstancias, instancia: Instancia): EstadoIns
   return { ...estado, instancias: { ...estado.instancias, [instancia.id]: instancia } };
 }
 
-function mesmaInstancia(a: Instancia, b: Instancia): boolean {
+function mesmaInstancia(a: object, b: object): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** A instância com os tokens trocados; uma instância que não existe não muda nada. */
+function comTokens(
+  estado: EstadoInstancias,
+  instanciaId: string,
+  mudar: (tokens: Readonly<Record<string, TokenNaInstancia>>, instancia: Instancia) => Readonly<Record<string, TokenNaInstancia>>,
+): EstadoInstancias {
+  const instancia = estado.instancias[instanciaId];
+  if (!instancia) {
+    return estado;
+  }
+  const tokens = mudar(instancia.tokens, instancia);
+  return tokens === instancia.tokens ? estado : comInstancia(estado, { ...instancia, tokens });
+}
+
+/** Mudou o tamanho do mapa: os tokens que ficariam fora voltam para a borda. */
+function tokensDentroDoMapa(instancia: Instancia): Instancia {
+  let mudou = false;
+  const tokens = Object.fromEntries(
+    Object.entries(instancia.tokens).map(([id, token]) => {
+      const { x, y } = dentroDoMapa(instancia, token.x, token.y);
+      if (x === token.x && y === token.y) {
+        return [id, token];
+      }
+      mudou = true;
+      return [id, { ...token, x, y }];
+    }),
+  );
+  return mudou ? { ...instancia, tokens } : instancia;
+}
+
+/** O estado com o token na instância, tirando o token antigo da ficha (onde quer que esteja) e o que tiver o mesmo id. */
+function comTokenPosto(estado: EstadoInstancias, instancia: Instancia, token: TokenNaInstancia): EstadoInstancias {
+  if (mesmaInstancia(token, instancia.tokens[token.id] ?? {})) {
+    return estado;
+  }
+  const instancias: Record<string, Instancia> = {};
+  for (const [id, i] of Object.entries(estado.instancias)) {
+    const restantes = Object.values(i.tokens).filter((t) => t.fichaId !== token.fichaId && t.id !== token.id);
+    instancias[id] =
+      restantes.length === Object.keys(i.tokens).length ? i : { ...i, tokens: Object.fromEntries(restantes.map((t) => [t.id, t])) };
+  }
+  const destino = instancias[instancia.id];
+  instancias[destino.id] = { ...destino, tokens: { ...destino.tokens, [token.id]: token } };
+  return { ...estado, instancias };
 }
 
 /** Uma ação sem efeito, ou inválida, devolve o mesmo objeto. */
@@ -233,7 +320,7 @@ export function aplicarAcaoInstancias(estado: EstadoInstancias, acao: AcaoInstan
       if (!atual) {
         return estado;
       }
-      const editada: Instancia = { ...atual, ...acao.mudancas, id: atual.id };
+      const editada: Instancia = tokensDentroDoMapa({ ...atual, ...acao.mudancas, id: atual.id, tokens: atual.tokens });
       if (mesmaInstancia(editada, atual) || problemaNaInstancia(editada)) {
         return estado;
       }
@@ -244,7 +331,8 @@ export function aplicarAcaoInstancias(estado: EstadoInstancias, acao: AcaoInstan
       if (!original || acao.novoId === '' || acao.novoId in estado.instancias) {
         return estado;
       }
-      return comInstancia(estado, { ...original, id: acao.novoId, nome: `${original.nome} (cópia)` });
+      // A cópia sai sem tokens: cada ficha tem um token só no jogo inteiro.
+      return comInstancia(estado, { ...original, id: acao.novoId, nome: `${original.nome} (cópia)`, tokens: {} });
     }
     case 'ApagarInstancia': {
       if (!(acao.instanciaId in estado.instancias)) {
@@ -276,6 +364,45 @@ export function aplicarAcaoInstancias(estado: EstadoInstancias, acao: AcaoInstan
       }
       return { ...estado, cenaInicial: acao.cena };
     }
+    case 'ColocarToken': {
+      const instancia = estado.instancias[acao.instanciaId];
+      if (!instancia || problemaNoToken(acao.token)) {
+        return estado;
+      }
+      const posto = comTokenPosto(estado, instancia, { ...acao.token, ...dentroDoMapa(instancia, acao.token.x, acao.token.y) });
+      // Quem controla a ficha vai para onde ela está.
+      return acao.levar && acao.levar.length > 0
+        ? aplicarAcaoInstancias(posto, { tipo: 'LevarParaCena', participanteIds: acao.levar, cena: cenaNaInstancia(instancia.id) })
+        : posto;
+    }
+    case 'MoverToken':
+      return comTokens(estado, acao.instanciaId, (tokens, instancia) => {
+        const token = tokens[acao.tokenId];
+        if (!token || !Number.isFinite(acao.x) || !Number.isFinite(acao.y)) {
+          return tokens;
+        }
+        const { x, y } = dentroDoMapa(instancia, acao.x, acao.y);
+        return x === token.x && y === token.y ? tokens : { ...tokens, [token.id]: { ...token, x, y } };
+      });
+    case 'EditarToken':
+      return comTokens(estado, acao.instanciaId, (tokens) => {
+        const token = tokens[acao.tokenId];
+        if (!token) {
+          return tokens;
+        }
+        // Só os campos que se editam; posição, ficha e id ficam.
+        const { tamanho, escondido, travado, nomeNoMapa } = { ...token, ...acao.mudancas };
+        const editado: TokenNaInstancia = { ...token, tamanho, escondido, travado, nomeNoMapa };
+        return mesmaInstancia(editado, token) || !tamanhoValido(tamanho) ? tokens : { ...tokens, [token.id]: editado };
+      });
+    case 'TirarToken':
+      return comTokens(estado, acao.instanciaId, (tokens) => {
+        if (!(acao.tokenId in tokens)) {
+          return tokens;
+        }
+        const { [acao.tokenId]: _tirado, ...restantes } = tokens;
+        return restantes;
+      });
     case 'CarregarInstancias':
       return acao.estado;
   }
@@ -283,8 +410,8 @@ export function aplicarAcaoInstancias(estado: EstadoInstancias, acao: AcaoInstan
 
 /**
  * As instâncias como um participante pode recebê-las. O jogador recebe só a instância em que
- * está, sem a descrição; as outras não existem para ele, nem os nomes. Também não sabe onde
- * estão os outros jogadores. No online, é isto que o servidor manda a cada jogador.
+ * está, sem a descrição e sem os tokens escondidos; as outras não existem para ele, nem os nomes.
+ * Também não sabe onde estão os outros jogadores. No online, é isto que o servidor manda a cada jogador.
  */
 export function instanciasVistasPor(estado: EstadoInstancias, participanteId: string): EstadoInstancias {
   if (ehMestre(participanteId)) {
@@ -293,7 +420,15 @@ export function instanciasVistasPor(estado: EstadoInstancias, participanteId: st
   const cena = cenaDe(estado, participanteId);
   const atual = cena.tipo === 'instancia' ? estado.instancias[cena.instanciaId] : null;
   return {
-    instancias: atual ? { [atual.id]: { ...atual, descricao: '' } } : {},
+    instancias: atual
+      ? {
+          [atual.id]: {
+            ...atual,
+            descricao: '',
+            tokens: Object.fromEntries(Object.entries(atual.tokens).filter(([, token]) => !token.escondido)),
+          },
+        }
+      : {},
     cenas: { [participanteId]: cena },
     cenaInicial: cena,
   };
@@ -301,10 +436,14 @@ export function instanciasVistasPor(estado: EstadoInstancias, participanteId: st
 
 export type LojaInstancias = LojaComHistorico<EstadoInstancias, AcaoInstancias>;
 
-/** Por enquanto, só o mestre muda as instâncias; os jogadores ganham ações nos passos seguintes. */
+/**
+ * O mestre muda tudo; o jogador só move os próprios tokens (`conferirInstancias`).
+ * O contexto diz quem controla cada ficha.
+ */
 export function criarLojaInstancias(
   inicial: EstadoInstancias = criarInstanciasVazias(),
   opcoes: OpcoesRegistro = {},
+  contexto: ContextoDasInstancias = SEM_FICHAS,
 ): LojaInstancias {
   return criarLojaComHistorico(
     {
@@ -313,7 +452,7 @@ export function criarLojaInstancias(
       coordDaAcao: (acao) => (acao.tipo === 'CriarInstancia' ? acao.instancia.hex : null),
       eventoDesfazer: 'DesfazerInstancias',
       eventoRefazer: 'RefazerInstancias',
-      conferir: soOMestre('as instâncias'),
+      conferir: (antes, depois, autorId) => conferirInstancias(antes, depois, autorId, contexto),
     },
     opcoes,
   );

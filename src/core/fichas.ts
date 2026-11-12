@@ -35,6 +35,11 @@ export interface Ficha {
   readonly retrato?: string;
   /** Imagem do token no mapa, quando é diferente do retrato. Sem ela, o token usa o retrato. */
   readonly token?: string;
+  /**
+   * Monstro posto num mapa a partir do compêndio: o id da instância onde nasceu. Essas fichas
+   * ficam num grupo à parte na tela Fichas. Opcional, sem mudar a versão do formato.
+   */
+  readonly daInstancia?: string;
   /** Participante da campanha que controla a ficha: o mestre ou um jogador. */
   readonly donoId: string;
   /** Quem vê a ficha além do dono e do mestre. "Só o mestre" quer dizer que ninguém mais vê. */

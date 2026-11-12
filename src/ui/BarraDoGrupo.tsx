@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { MenuIrAte, type DestinoIrAte } from './MenuIrAte';
 import { formatarDuracao, formatarRelogio, MINUTOS_POR_DIA, type EstadoGrupo, type LojaGrupo } from '../core/grupo';
 import type { RegrasDeViagem } from '../core/viagem';
 import { ritmoDe } from '../core/viagem';
@@ -15,6 +16,8 @@ interface BarraDoGrupoProps {
   readonly descansoPendente: boolean;
   /** Leva a câmera até o grupo, para quem se perdeu arrastando o mapa. */
   readonly aoIrAteOGrupo: () => void;
+  /** Para o mestre: escolher entre o grupo e cada jogador, que pode estar numa instância. */
+  readonly destinosIrAte?: readonly DestinoIrAte[];
   /** Só o mestre: o diário de viagem. */
   readonly diarioAberto: boolean;
   readonly aoAlternarDiario: () => void;
@@ -44,6 +47,7 @@ export function BarraDoGrupo({
   aoAlternarPainel,
   descansoPendente,
   aoIrAteOGrupo,
+  destinosIrAte,
   diarioAberto,
   aoAlternarDiario,
   avisoEleicao,
@@ -79,9 +83,13 @@ export function BarraDoGrupo({
             ⛔ Travado
           </span>
         )}
-        <button type="button" disabled={!grupo.posicao} title="Mostrar onde o grupo está" onClick={aoIrAteOGrupo}>
-          📍 Ir até o grupo
-        </button>
+        {destinosIrAte ? (
+          <MenuIrAte destinos={destinosIrAte} />
+        ) : (
+          <button type="button" disabled={!grupo.posicao} title="Mostrar onde o grupo está" onClick={aoIrAteOGrupo}>
+            📍 Ir até o grupo
+          </button>
+        )}
         <button type="button" aria-pressed={painelAberto} onClick={aoAlternarPainel}>
           Grupo
         </button>

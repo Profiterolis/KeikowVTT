@@ -3376,3 +3376,197 @@ fieldset.formulario {
   border-color: #6b3434;
   color: #e08a8a;
 }
+
+/* ---------- Tokens das instâncias (Fase 6, passo 4) ---------- */
+
+.painel-tokens h3 {
+  margin: 4px 0 6px;
+  font-size: 13px;
+}
+
+.painel-tokens .painel-instancias-busca {
+  width: 100%;
+  margin: 8px 0 4px;
+}
+
+.painel-tokens-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.painel-tokens-lista > li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.painel-tokens-lista small {
+  color: #a5a79f;
+  font-size: 11px;
+}
+
+.painel-grupo .painel-tokens-lista .painel-tokens-nome {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.painel-tokens-arrastavel {
+  padding: 5px 8px;
+  border: 1px solid #333846;
+  border-radius: 4px;
+  background: #23262f;
+  cursor: grab;
+  user-select: none;
+}
+
+.painel-tokens-arrastavel:hover {
+  border-color: #7fd4ff;
+}
+
+.painel-tokens-tipo {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.painel-tokens-tipo.tipo-personagem {
+  background: #6fcf73;
+}
+
+.painel-tokens-tipo.tipo-npc {
+  background: #f2c94c;
+}
+
+.painel-tokens-tipo.tipo-monstro {
+  background: #e05c5c;
+}
+
+.janela-ficha {
+  position: absolute;
+  z-index: 8;
+  top: 12px;
+  bottom: 12px;
+  left: 12px;
+  display: flex;
+  /* Deixa à vista o mapa e a gaveta de tokens, à direita. */
+  width: min(860px, max(480px, calc(100% - 360px)));
+  flex-direction: column;
+  border: 1px solid #333846;
+  border-radius: 8px;
+  background: #1d2029;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 55%);
+  overflow: hidden;
+}
+
+.janela-ficha > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-bottom: 1px solid #333846;
+}
+
+.janela-ficha > header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.janela-ficha-corpo {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.janela-ficha-corpo .painel-rolagens {
+  flex-basis: 240px;
+  overflow-y: auto;
+}
+
+.janela-token h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.janela-token .painel-campo input {
+  width: 100%;
+}
+
+.janela-token-tamanho {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid #333846;
+  border-radius: 6px;
+}
+
+.janela-botoes {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.aviso-campo {
+  margin: 0;
+  color: #ff9a5c;
+  font-size: 12px;
+}
+
+.barra-grupo-aviso {
+  color: #ff9a5c;
+}
+
+.fichas-das-instancias > summary {
+  margin: 10px 0 4px;
+  color: #a5a79f;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.menu-ir-ate {
+  position: relative;
+}
+
+.menu-ir-ate-lista {
+  position: absolute;
+  z-index: 12;
+  top: calc(100% + 4px);
+  left: 0;
+  display: flex;
+  min-width: 220px;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 6px;
+  border: 1px solid #333846;
+  border-radius: 6px;
+  background: #1d2029;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 50%);
+  list-style: none;
+}
+
+.menu-ir-ate-lista button {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 8px;
+  text-align: left;
+}
+
+.menu-ir-ate-lista small {
+  color: #a5a79f;
+  font-size: 11px;
+}

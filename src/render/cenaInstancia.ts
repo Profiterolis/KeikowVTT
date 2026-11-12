@@ -1,5 +1,6 @@
 /**
- * A cena PixiJS de uma instância tática: a imagem de fundo, a câmera e a régua de medir a escala.
+ * A cena PixiJS de uma instância tática: a imagem de fundo, a câmera, os tokens e as réguas
+ * (a de acertar a escala, do mestre, e a de medir distâncias, de todos).
  * É separada da cena do mapa-mundi: cada uma tem a própria câmera e as próprias camadas.
  * Só desenha; quem decide o que muda são as lojas do `core/`.
  */
@@ -8,6 +9,7 @@ import { Viewport } from 'pixi-viewport';
 import { pixelsEmMetros, type Instancia } from '../core/instancias';
 import type { PontoMundo } from '../core/hex';
 import type { CarregarImagem } from './camadaGrupo';
+import { criarCamadaTokens, type EventosDosTokens, type TokenParaDesenhar } from './camadaTokens';
 
 const ZOOM_MINIMO = 0.02;
 const ZOOM_MAXIMO = 8;
@@ -31,6 +33,14 @@ export interface CenaInstancia {
    * `null` desliga.
    */
   medir(aoMedir: ((pixels: number) => void) | null): void;
+  /** Liga a régua de distâncias: apertar, arrastar e soltar mede em metros. */
+  regua(ligada: boolean): void;
+  tokens(lista: readonly TokenParaDesenhar[]): void;
+  aoTokens(eventos: EventosDosTokens | null): void;
+  /** Leva a câmera, deslizando, até um ponto da instância (o token de um jogador, no "Ir até"). */
+  centralizarEm(x: number, y: number): void;
+  /** O ponto da instância sob uma posição da tela (para soltar algo arrastado de fora), ou `null`. */
+  paraMundo(clientX: number, clientY: number): PontoMundo | null;
   destruir(): void;
 }
 
@@ -70,8 +80,13 @@ export function criarCenaInstancia(container: HTMLElement, carregarImagem: Carre
   let pronta = false;
   let destruida = false;
   let pendente: Instancia | null = null;
-  let controles: Omit<CenaInstancia, 'destruir'> | null = null;
+  let controles: Omit<CenaInstancia, 'destruir' | 'aoTokens'> | null = null;
   let medicaoPendente: ((pixels: number) => void) | null = null;
+  let reguaPendente = false;
+  let tokensPendentes: readonly TokenParaDesenhar[] = [];
+  let eventosPendentes: EventosDosTokens | null = null;
+  /** Um "Ir até" pedido antes de a cena ficar pronta: vale logo depois do enquadramento. */
+  let focoPendente: PontoMundo | null = null;
 
   const iniciar = async () => {
     await app.init({
@@ -87,10 +102,16 @@ export function criarCenaInstancia(container: HTMLElement, carregarImagem: Carre
     }
     pronta = true;
     container.appendChild(app.canvas);
-    controles = montar(app, carregarImagem);
+    controles = montar(app, carregarImagem, () => eventosPendentes);
     controles.mostrar(pendente);
     controles.enquadrar();
+    if (focoPendente) {
+      controles.centralizarEm(focoPendente.x, focoPendente.y);
+      focoPendente = null;
+    }
     controles.medir(medicaoPendente);
+    controles.regua(reguaPendente);
+    controles.tokens(tokensPendentes);
   };
   void iniciar();
 
@@ -104,6 +125,25 @@ export function criarCenaInstancia(container: HTMLElement, carregarImagem: Carre
       medicaoPendente = aoMedir;
       controles?.medir(aoMedir);
     },
+    regua(ligada) {
+      reguaPendente = ligada;
+      controles?.regua(ligada);
+    },
+    tokens(lista) {
+      tokensPendentes = lista;
+      controles?.tokens(lista);
+    },
+    aoTokens(eventos) {
+      eventosPendentes = eventos;
+    },
+    centralizarEm(x, y) {
+      if (controles) {
+        controles.centralizarEm(x, y);
+      } else {
+        focoPendente = { x, y };
+      }
+    },
+    paraMundo: (clientX, clientY) => controles?.paraMundo(clientX, clientY) ?? null,
     destruir() {
       destruida = true;
       controles = null;
@@ -114,7 +154,11 @@ export function criarCenaInstancia(container: HTMLElement, carregarImagem: Carre
   };
 }
 
-function montar(app: Application, carregarImagem: CarregarImagem): Omit<CenaInstancia, 'destruir'> {
+function montar(
+  app: Application,
+  carregarImagem: CarregarImagem,
+  eventosDosTokens: () => EventosDosTokens | null,
+): Omit<CenaInstancia, 'destruir' | 'aoTokens'> {
   const camera = new Viewport({
     screenWidth: app.screen.width,
     screenHeight: app.screen.height,
@@ -133,8 +177,10 @@ function montar(app: Application, carregarImagem: CarregarImagem): Omit<CenaInst
   const fundo = new Container();
   const semImagem = new Graphics();
   const borda = new Graphics();
-  /** Os tokens, as paredes e a luz entram aqui, entre o fundo e a régua, nos próximos passos. */
+  /** Os tokens; as paredes e a luz entram aqui também, entre o fundo e a régua, nos próximos passos. */
   const objetos = new Container();
+  const camadaTokens = criarCamadaTokens(camera, app.canvas, app.ticker, carregarImagem, eventosDosTokens);
+  objetos.addChild(camadaTokens.container);
   const regua = new Graphics();
   const rotuloRegua = new Text({
     text: '',
@@ -193,6 +239,9 @@ function montar(app: Application, carregarImagem: CarregarImagem): Omit<CenaInst
   };
 
   const mostrar = (instancia: Instancia | null) => {
+    if (instancia) {
+      camadaTokens.definirEscala(instancia.metrosPorPixel);
+    }
     const mudouTamanho = instancia?.largura !== atual?.largura || instancia?.altura !== atual?.altura;
     atual = instancia;
     desenharMoldura(instancia);
@@ -216,8 +265,11 @@ function montar(app: Application, carregarImagem: CarregarImagem): Omit<CenaInst
     camera.moveCenter(atual.largura / 2, atual.altura / 2);
   };
 
-  // ---------- Régua ----------
+  // ---------- Réguas ----------
   let aoMedir: ((pixels: number) => void) | null = null;
+  let reguaLivre = false;
+  /** Na régua de distâncias, o botão está apertado (arrastando). */
+  let medindoLivre = false;
   let inicio: PontoMundo | null = null;
 
   const mundoDoEvento = (evento: PointerEvent): PontoMundo => {
@@ -236,15 +288,25 @@ function montar(app: Application, carregarImagem: CarregarImagem): Omit<CenaInst
     regua.moveTo(inicio.x, inicio.y).lineTo(ate.x, ate.y).stroke({ color: COR_REGUA, width: espessura });
     regua.circle(inicio.x, inicio.y, 5 / camera.scale.x).fill(COR_REGUA);
     const pixels = Math.hypot(ate.x - inicio.x, ate.y - inicio.y);
-    const metros = atual ? ` ≈ ${formatarMetros(pixelsEmMetros(atual, pixels))}` : '';
-    rotuloRegua.text = `${Math.round(pixels)} px${metros}`;
+    const metros = atual ? formatarMetros(pixelsEmMetros(atual, pixels)) : '';
+    // A régua de distâncias mostra só os metros; a da escala mostra também os pixels da imagem.
+    rotuloRegua.text = aoMedir ? `${Math.round(pixels)} px ≈ ${metros}` : metros;
     rotuloRegua.scale.set(1 / camera.scale.x);
     rotuloRegua.position.set(ate.x + 10 / camera.scale.x, ate.y + 10 / camera.scale.x);
     rotuloRegua.visible = true;
   };
 
   app.canvas.addEventListener('pointerdown', (evento) => {
-    if (evento.button !== BOTAO_ESQUERDO || !aoMedir) {
+    if (evento.button !== BOTAO_ESQUERDO) {
+      return;
+    }
+    if (reguaLivre && !aoMedir) {
+      inicio = mundoDoEvento(evento);
+      medindoLivre = true;
+      desenharRegua(inicio);
+      return;
+    }
+    if (!aoMedir) {
       return;
     }
     const ponto = mundoDoEvento(evento);
@@ -261,10 +323,28 @@ function montar(app: Application, carregarImagem: CarregarImagem): Omit<CenaInst
     }
   });
   app.canvas.addEventListener('pointermove', (evento) => {
-    if (aoMedir && inicio) {
+    if ((aoMedir || medindoLivre) && inicio) {
       desenharRegua(mundoDoEvento(evento));
     }
   });
+  // Soltar o botão deixa a medida na tela até o próximo clique.
+  window.addEventListener('pointerup', (evento) => {
+    if (evento.button === BOTAO_ESQUERDO) {
+      medindoLivre = false;
+    }
+  });
+  camera.on('zoomed', () => {
+    camadaTokens.ajustarAoZoom();
+  });
+
+  /** Com uma régua ligada, o botão esquerdo é dela: os tokens não respondem. */
+  const atualizarModo = () => {
+    const comRegua = aoMedir !== null || reguaLivre;
+    camadaTokens.interativa(!comRegua);
+    // O PixiJS controla o cursor da tela: a cruz da régua passa por ele.
+    app.renderer.events.cursorStyles.default = comRegua ? 'crosshair' : 'inherit';
+    app.renderer.events.setCursor(comRegua ? 'crosshair' : 'inherit');
+  };
 
   return {
     mostrar,
@@ -273,9 +353,25 @@ function montar(app: Application, carregarImagem: CarregarImagem): Omit<CenaInst
       aoMedir = funcao;
       inicio = null;
       desenharRegua(null);
-      // O PixiJS controla o cursor da tela: a cruz da régua passa por ele.
-      app.renderer.events.cursorStyles.default = funcao ? 'crosshair' : 'inherit';
-      app.renderer.events.setCursor(funcao ? 'crosshair' : 'inherit');
+      atualizarModo();
+    },
+    regua(ligada) {
+      reguaLivre = ligada;
+      medindoLivre = false;
+      inicio = null;
+      desenharRegua(null);
+      atualizarModo();
+    },
+    tokens: (lista) => camadaTokens.mostrar(lista),
+    centralizarEm(x, y) {
+      // Aproxima até um token comum ficar com uns 60 pixels na tela, se a câmera estiver mais longe.
+      const escala = atual ? Math.min(Math.max(camera.scale.x, 60 / (1.5 / atual.metrosPorPixel)), ZOOM_MAXIMO) : camera.scale.x;
+      camera.animate({ position: { x, y }, scale: escala, time: 450, ease: 'easeInOutSine', removeOnInterrupt: true });
+    },
+    paraMundo(clientX, clientY) {
+      const retangulo = app.canvas.getBoundingClientRect();
+      const { x, y } = camera.toWorld(clientX - retangulo.left, clientY - retangulo.top);
+      return { x, y };
     },
   };
 }
