@@ -12,6 +12,7 @@ import type { LojaFichas } from '../core/fichas';
 import { lerFichasDoArquivo } from '../core/persistenciaFichas';
 import type { LojaInstancias } from '../core/instancias';
 import { lerInstanciasDoArquivo } from '../core/persistenciaInstancias';
+import { EXPLORACAO_VAZIA, lerExploracaoDoArquivo, type LojaExploracao } from '../core/exploracao';
 import type { LojaRegras } from '../core/regrasDaCampanha';
 import { lerArquivoDaCampanha, montarArquivoDaCampanha, type ImagemNoArquivo } from '../core/arquivoDaCampanha';
 import { imagensUsadas } from '../core/imagens';
@@ -32,6 +33,7 @@ interface BarraArquivoProps {
   readonly lojaCompendio: LojaCompendio;
   readonly lojaFichas: LojaFichas;
   readonly lojaInstancias: LojaInstancias;
+  readonly lojaExploracao: LojaExploracao;
   readonly lojaRegras: LojaRegras;
   readonly aoAbrirMapa: (estado: EstadoMapa) => void;
   readonly aoMensagem: (mensagem: Mensagem) => void;
@@ -63,6 +65,7 @@ export function BarraArquivo({
   lojaCompendio,
   lojaFichas,
   lojaInstancias,
+  lojaExploracao,
   lojaRegras,
   aoAbrirMapa,
   aoMensagem,
@@ -85,6 +88,7 @@ export function BarraArquivo({
       lojaCompendio.obterEstado(),
       lojaFichas.obterEstado(),
       lojaInstancias.obterEstado(),
+      lojaExploracao.obterEstado(),
     );
     const usadas = [...imagensUsadas(lojaCompendio.obterEstado(), lojaFichas.obterEstado(), lojaInstancias.obterEstado())];
     const lidas = await Promise.all(
@@ -123,11 +127,12 @@ export function BarraArquivo({
     const lidoCompendio = lerCompendioDoArquivo(texto);
     const lidasFichas = lerFichasDoArquivo(texto);
     const lidasInstancias = lerInstanciasDoArquivo(texto);
+    const lidaExploracao = lerExploracaoDoArquivo(texto);
     // Sem isso, escolher o mesmo arquivo de novo não dispararia este evento.
     entrada.value = '';
     // Qualquer parte com problema cancela tudo: abrir só metade misturaria duas campanhas.
-    const problema = [resultado, lidaCampanha, lidoCompendio, lidasFichas, lidasInstancias].find((r) => !r.ok);
-    if (!resultado.ok || !lidaCampanha.ok || !lidoCompendio.ok || !lidasFichas.ok || !lidasInstancias.ok) {
+    const problema = [resultado, lidaCampanha, lidoCompendio, lidasFichas, lidasInstancias, lidaExploracao].find((r) => !r.ok);
+    if (!resultado.ok || !lidaCampanha.ok || !lidoCompendio.ok || !lidasFichas.ok || !lidasInstancias.ok || !lidaExploracao.ok) {
       const motivo = problema && !problema.ok ? problema.erro : '';
       aoMensagem({ tipo: 'erro', texto: `Não foi possível abrir: ${motivo}` });
       return;
@@ -160,6 +165,8 @@ export function BarraArquivo({
     // Arquivos de antes da Fase 6 não têm instâncias: as deste navegador ficam como estão.
     if (lidasInstancias.estado) {
       lojaInstancias.despachar({ tipo: 'CarregarInstancias', estado: lidasInstancias.estado });
+      // A memória da névoa acompanha as instâncias: sem ela no arquivo, começa vazia.
+      lojaExploracao.substituir(lidaExploracao.estado ?? EXPLORACAO_VAZIA);
     }
     loja.despachar({ tipo: 'CarregarMapa', estado: resultado.estado });
     lojaGrupo.despachar({ tipo: 'CarregarGrupo', estado: resultado.grupo });

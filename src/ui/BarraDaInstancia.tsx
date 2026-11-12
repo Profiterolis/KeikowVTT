@@ -37,6 +37,11 @@ export function BarraDaInstancia({
   editandoParedes,
   aoAlternarParedes,
   barraDeParedes,
+  editandoLuzes,
+  aoAlternarLuzes,
+  previaDaLuz,
+  aoAlternarPrevia,
+  barraDeLuzes,
   aoIrAoMapa,
 }: {
   readonly instancia: Instancia;
@@ -57,6 +62,12 @@ export function BarraDaInstancia({
   readonly aoAlternarParedes: () => void;
   /** As ferramentas de paredes, mostradas enquanto o mestre as edita. */
   readonly barraDeParedes: ReactNode;
+  readonly editandoLuzes: boolean;
+  readonly aoAlternarLuzes: () => void;
+  /** O mestre vê a luz e a escuridão (mais fracas) ou o mapa todo claro. */
+  readonly previaDaLuz: boolean;
+  readonly aoAlternarPrevia: () => void;
+  readonly barraDeLuzes: ReactNode;
   /** O mestre volta a ver o mapa-mundi; o jogador só espia, sem sair da instância. */
   readonly aoIrAoMapa: () => void;
 }) {
@@ -107,6 +118,21 @@ export function BarraDaInstancia({
           </button>
         )}
         {mestre && (
+          <button type="button" aria-pressed={editandoLuzes} onClick={aoAlternarLuzes} title="Luz do ambiente, luzes do mapa e a visão dos jogadores">
+            💡 Luzes
+          </button>
+        )}
+        {mestre && (
+          <button
+            type="button"
+            aria-pressed={previaDaLuz}
+            onClick={aoAlternarPrevia}
+            title="Mostra (mais fraca) a escuridão e a luz que os jogadores enfrentam; desligada, o mapa fica todo claro para você"
+          >
+            🌗 Prévia da luz
+          </button>
+        )}
+        {mestre && (
           <button
             type="button"
             aria-pressed={instancia.movimentoTravado}
@@ -130,6 +156,7 @@ export function BarraDaInstancia({
         )}
       </div>
       {mestre && barraDeParedes}
+      {mestre && barraDeLuzes}
       {mestre && (
         <div className="barra-grupo-linha barra-instancia-jogadores">
           <span>

@@ -97,6 +97,8 @@ export function criarCamadaTokens(
   ticker: Ticker,
   carregarImagem: CarregarImagem,
   eventos: () => EventosDosTokens | null,
+  /** Enquanto um token é arrastado, onde ele está (para a visão acompanhar); `null` quando volta. */
+  aoArrastar: (tokenId: string, ponto: PontoMundo | null) => void = () => undefined,
 ): CamadaTokens {
   const container = new Container();
   const linha = new Graphics();
@@ -350,6 +352,7 @@ export function criarCamadaTokens(
       arraste.caminho = limite.caminho;
       visual.raiz.position.set(limite.final.x, limite.final.y);
       desenharLinha(visual);
+      aoArrastar(arraste.id, limite.final);
     }
   };
 
@@ -374,6 +377,7 @@ export function criarCamadaTokens(
     if (!valeu) {
       // Recusado: volta deslizando para onde estava.
       visual.deslize = { de: { x: visual.raiz.x, y: visual.raiz.y }, para: atual.origem, inicio: performance.now() };
+      aoArrastar(atual.id, null);
     }
     redesenharSelecoes();
   };
@@ -457,6 +461,7 @@ export function criarCamadaTokens(
         if (visual) {
           visual.raiz.position.set(arraste.origem.x, arraste.origem.y);
         }
+        aoArrastar(arraste.id, null);
         arraste = null;
         desenharLinha(null);
       }

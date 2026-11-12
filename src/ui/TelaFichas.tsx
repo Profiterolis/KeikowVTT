@@ -999,8 +999,8 @@ function BlocoCombate({ ficha, calculo, editar, explicar, mesa }: PropsBloco) {
 }
 
 /**
- * O que a ficha leva para a viagem no mapa: velocidade, visão, veículos e guias.
- * Veículos e guias só aparecem quando a ficha tem algum, para não encher a ficha de zeros.
+ * O que a ficha leva para a viagem no mapa (velocidade, visão, veículos e guias) e para as
+ * instâncias (visão no escuro e a luz que carrega). Veículos, guias, visão no escuro e luz só aparecem quando a ficha tem algum, para não encher a ficha de zeros.
  */
 function BlocoViagem({ calculo, explicar }: Pick<PropsBloco, 'calculo' | 'explicar'>) {
   const REGRAS = useRegras();
@@ -1021,7 +1021,7 @@ function BlocoViagem({ calculo, explicar }: Pick<PropsBloco, 'calculo' | 'explic
   });
   return (
     <section className="ficha-secao">
-      <h3>Viagem</h3>
+      <h3>Viagem e visão</h3>
       <div className="ficha-combate">
         {visiveis.map(({ id }) => (
           <div key={id} className="ficha-caixa">

@@ -75,6 +75,22 @@ import { ExplicacaoDoPasso } from './ExplicacaoDoPasso';
 import { BarraDoGrupo } from './BarraDoGrupo';
 import { problemaNosItensDaCriacao } from '../core/kits';
 import { criarLojaNotificacoes, type LojaNotificacoes } from '../core/notificacoes';
+import { celulaExplorada, criarLojaExploracao, memoriaDe, type LojaExploracao } from '../core/exploracao';
+import {
+  celulasVistas,
+  gradeDaExploracao,
+  instanciaPelaVisao,
+  luzDoToken,
+  tokensQueVe,
+  vePonto,
+  visaoDaFicha,
+  visaoNaInstancia,
+  type FontesDaVisao,
+} from '../core/visaoTatica';
+import type { VisaoParaDesenhar } from '../render/camadaLuz';
+import type { EventosDasLuzes } from '../render/camadaFontesDeLuz';
+import { novaFonteDeLuz } from '../core/luz';
+import { BarraDeLuzes } from './BarraDeLuzes';
 import { Notificacoes } from './Notificacoes';
 import { PainelDiario } from './PainelDiario';
 import { PainelGrupo } from './PainelGrupo';
@@ -93,6 +109,7 @@ import {
   lerFichasLocal,
   lerInstanciasLocal,
   lerNotificacoesLocal,
+  lerExploracaoLocal,
   lerRolagensLocal,
   lerSalvamentoLocal,
   manterCampanhaLocal,
@@ -100,6 +117,7 @@ import {
   manterFichasLocal,
   manterInstanciasLocal,
   manterNotificacoesLocal,
+  manterExploracaoLocal,
   manterRolagensLocal,
   manterSalvamentoLocal,
 } from '../net/salvamentoLocal';
@@ -152,6 +170,7 @@ interface EditorCarregado {
   readonly lojaCompendio: LojaCompendio;
   readonly lojaFichas: LojaFichas;
   readonly lojaInstancias: LojaInstancias;
+  readonly lojaExploracao: LojaExploracao;
   /** O que as instâncias consultam das fichas: quem controla cada uma. */
   readonly contextoInstancias: ContextoDasInstancias;
   readonly lojaRolagens: LojaRolagens;
@@ -178,7 +197,7 @@ const IMAGENS = criarBancoDeImagens();
 
 async function iniciarEditor(): Promise<EditorCarregado> {
   pedirProtecaoDosDados();
-  const [salvo, salvaCampanha, salvoCompendio, salvasFichas, salvasRolagens, salvasNotificacoes, salvasInstancias] = await Promise.all([
+  const [salvo, salvaCampanha, salvoCompendio, salvasFichas, salvasRolagens, salvasNotificacoes, salvasInstancias, salvaExploracao] = await Promise.all([
     lerSalvamentoLocal(ARMAZENAMENTO, localStorage),
     lerCampanhaLocal(ARMAZENAMENTO, localStorage),
     lerCompendioLocal(ARMAZENAMENTO, localStorage),
@@ -186,6 +205,7 @@ async function iniciarEditor(): Promise<EditorCarregado> {
     lerRolagensLocal(ARMAZENAMENTO, localStorage),
     lerNotificacoesLocal(ARMAZENAMENTO, localStorage),
     lerInstanciasLocal(ARMAZENAMENTO, localStorage),
+    lerExploracaoLocal(ARMAZENAMENTO, localStorage),
   ]);
   const campanha = salvaCampanha?.ok ? salvaCampanha : null;
   const mapa = salvo?.ok ? salvo : null;
@@ -280,6 +300,39 @@ async function iniciarEditor(): Promise<EditorCarregado> {
     }
     instanciasAntes = depois;
   });
+  // A memória da névoa de masmorra: ilegível, começa vazia (perder o que se viu não estraga nada).
+  const lojaExploracao = criarLojaExploracao(salvaExploracao?.ok ? salvaExploracao.estado : undefined);
+  // Depois de cada mudança (um token andou, uma porta abriu, o relógio passou), cada jogador guarda o
+  // que os personagens dele veem. No online, cada um fará isso no próprio computador.
+  let exploracaoPendente = false;
+  const guardarExploracao = () => {
+    if (exploracaoPendente) {
+      return;
+    }
+    exploracaoPendente = true;
+    setTimeout(() => {
+      exploracaoPendente = false;
+      const fontes: FontesDaVisao = {
+        fichas: lojaFichas.obterEstado().fichas,
+        regras: lojaRegras.obterEstado(),
+        contexto: contextoInstancias,
+        relogio: lojaGrupo.obterEstado().relogio,
+      };
+      const estado = lojaInstancias.obterEstado();
+      for (const participante of lojaCampanha.obterEstado().participantes) {
+        const instancia = participante.papel === 'jogador' ? instanciaDe(estado, participante.id) : null;
+        if (instancia?.visao === 'masmorra') {
+          const grade = gradeDaExploracao(instancia);
+          const vistas = celulasVistas(visaoNaInstancia(instancia, participante.id, fontes), grade);
+          lojaExploracao.explorar(participante.id, instancia.id, participante.id, grade, vistas);
+        }
+      }
+    }, 50);
+  };
+  for (const assinar of [lojaInstancias.assinar, lojaFichas.assinar, lojaRegras.assinar, lojaGrupo.assinar]) {
+    assinar(guardarExploracao);
+  }
+  guardarExploracao();
   return {
     loja,
     lojaGrupo,
@@ -290,6 +343,7 @@ async function iniciarEditor(): Promise<EditorCarregado> {
     lojaFichas,
     lojaInstancias,
     contextoInstancias,
+    lojaExploracao,
     // Um registro de rolagens ilegível não impede de abrir: começa vazio.
     lojaRolagens: criarLojaRolagens(salvasRolagens?.ok ? salvasRolagens.rolagens : []),
     lojaNotificacoes,
@@ -366,6 +420,7 @@ function Editor({
   lojaFichas,
   lojaInstancias,
   contextoInstancias,
+  lojaExploracao,
   lojaRolagens,
   lojaNotificacoes,
   lojaRegras,
@@ -401,6 +456,9 @@ function Editor({
   const [tokenEmConfiguracao, setTokenEmConfiguracao] = useState<string | null>(null);
   /** A ferramenta de paredes do mestre (`null` = jogando: tokens e portas respondem). */
   const [modoParedes, setModoParedes] = useState<ModoParedes>(null);
+  /** A ferramenta "💡 Luzes" do mestre e a luz marcada nela. */
+  const [modoLuzes, setModoLuzes] = useState(false);
+  const [luzSelecionada, setLuzSelecionada] = useState<string | null>(null);
   const [paredeSelecionada, setParedeSelecionada] = useState<string | null>(null);
   /** Há uma linha de paredes sendo desenhada: o Esc a termina antes de sair da ferramenta. */
   const [desenhandoParede, setDesenhandoParede] = useState(false);
@@ -454,6 +512,8 @@ function Editor({
     setModoParedes(null);
     setParedeSelecionada(null);
     setDesenhandoParede(false);
+    setModoLuzes(false);
+    setLuzSelecionada(null);
     if (!naInstancia) {
       setFichaAberta(null);
     }
@@ -466,13 +526,51 @@ function Editor({
     }
   }, [medindo]);
 
+  // A visão de quem olha: o que cada token dele enxerga, a luz e a visão no escuro. Usa a instância
+  // inteira (portas secretas, luzes), mas só devolve ao jogador o que ele pode ver.
+  const visaoDaVista = useMemo(() => {
+    const inteira = instanciaVista ? instancias.instancias[instanciaVista.id] : undefined;
+    if (!inteira) {
+      return null;
+    }
+    const fontes: FontesDaVisao = { fichas: fichas.fichas, regras, contexto: contextoInstancias, relogio: grupo.relogio };
+    const visao = visaoNaInstancia(inteira, agindoComoId, fontes);
+    return { visao, vistos: tokensQueVe(visao, inteira, agindoComoId, fontes) };
+  }, [instanciaVista, instancias, fichas, regras, contextoInstancias, grupo.relogio, agindoComoId]);
+
   const tokensDaVista = useMemo(
     () =>
-      instanciaVista
-        ? tokensVistos(instancias, instanciaVista, agindoComoId, fichas.fichas, regras, contextoInstancias)
+      instanciaVista && visaoDaVista
+        ? tokensVistos(
+            instancias,
+            instanciaPelaVisao(instanciaVista, visaoDaVista.vistos),
+            agindoComoId,
+            fichas.fichas,
+            regras,
+            contextoInstancias,
+          )
         : [],
-    [instancias, instanciaVista, agindoComoId, fichas, regras, contextoInstancias],
+    [instancias, instanciaVista, visaoDaVista, agindoComoId, fichas, regras, contextoInstancias],
   );
+
+  // Névoa de masmorra: o que o jogador já viu nesta instância.
+  const exploracao = useSyncExternalStore(lojaExploracao.assinar, lojaExploracao.obterEstado);
+  const memoriaDaVista = useMemo(() => {
+    if (!instanciaVista || !modoJogador || instanciaVista.visao !== 'masmorra') {
+      return null;
+    }
+    const grade = gradeDaExploracao(instanciaVista);
+    return { grade, bits: memoriaDe(exploracao, instanciaVista.id, agindoComoId, grade) };
+  }, [instanciaVista, modoJogador, exploracao, agindoComoId]);
+
+  // O mestre vê a luz como prévia (mais fraca), e pode desligá-la.
+  const [previaDaLuz, setPreviaDaLuz] = useState(true);
+  const luzDaVista = useMemo((): VisaoParaDesenhar | null => {
+    if (!visaoDaVista || (!modoJogador && !previaDaLuz)) {
+      return null;
+    }
+    return { visao: visaoDaVista.visao, forca: modoJogador ? 1 : 0.6, memoria: memoriaDaVista };
+  }, [visaoDaVista, modoJogador, previaDaLuz, memoriaDaVista]);
 
   const instanciaVistaId = instanciaVista?.id ?? null;
 
@@ -512,7 +610,7 @@ function Editor({
             dica: 'Travado, o dono não move o token; o mestre move.',
             aoEscolher: () => editar({ travado: !token.travado }),
           },
-          { rotulo: 'Nome no mapa e tamanho…', aoEscolher: () => setTokenEmConfiguracao(tokenId) },
+          { rotulo: 'Nome no mapa, tamanho e luz…', aoEscolher: () => setTokenEmConfiguracao(tokenId) },
           {
             rotulo: 'Tirar do mapa',
             separar: true,
@@ -664,7 +762,56 @@ function Editor({
     };
   }, [instanciaVistaId, lojaInstancias, clicarPorta, abrirMenuDaPorta]);
 
-  const paredesDaVista = useMemo(() => (instanciaVista ? Object.values(instanciaVista.paredes) : []), [instanciaVista]);
+  // Na névoa de masmorra, o jogador só vê o ícone das portas que já viu (ou vê agora).
+  const paredesDaVista = useMemo(() => {
+    const todas = instanciaVista ? Object.values(instanciaVista.paredes) : [];
+    if (!memoriaDaVista || !visaoDaVista) {
+      return todas;
+    }
+    const { grade, bits } = memoriaDaVista;
+    return todas.filter((parede) => {
+      if (parede.tipo !== 'porta') {
+        return true;
+      }
+      const meio = { x: (parede.a.x + parede.b.x) / 2, y: (parede.a.y + parede.b.y) / 2 };
+      const indice =
+        Math.min(grade.linhas - 1, Math.floor(meio.y / grade.celula)) * grade.colunas +
+        Math.min(grade.colunas - 1, Math.floor(meio.x / grade.celula));
+      return (bits !== null && celulaExplorada(bits, indice)) || vePonto(visaoDaVista.visao, meio);
+    });
+  }, [instanciaVista, memoriaDaVista, visaoDaVista]);
+
+  /** A ferramenta "💡 Luzes": pôr, mover, marcar, acender e apagar as luzes do mapa. */
+  const eventosDasLuzes = useMemo((): EventosDasLuzes | null => {
+    if (!instanciaVistaId || modoJogador) {
+      return null;
+    }
+    const luzDe = (id: string) => lojaInstancias.obterEstado().instancias[instanciaVistaId]?.luzes[id];
+    return {
+      aoCriar(ponto) {
+        const luz = novaFonteDeLuz(crypto.randomUUID(), ponto.x, ponto.y);
+        lojaInstancias.despachar({ tipo: 'CriarLuz', instanciaId: instanciaVistaId, luz });
+        setLuzSelecionada(luz.id);
+      },
+      aoMover(id, ponto) {
+        const luz = luzDe(id);
+        if (luz) {
+          lojaInstancias.despachar({ tipo: 'EditarLuz', instanciaId: instanciaVistaId, luz: { ...luz, x: ponto.x, y: ponto.y } });
+        }
+      },
+      aoSelecionar: setLuzSelecionada,
+      aoAlternar(id) {
+        const luz = luzDe(id);
+        if (luz) {
+          lojaInstancias.despachar({ tipo: 'EditarLuz', instanciaId: instanciaVistaId, luz: { ...luz, ligada: !luz.ligada } });
+        }
+      },
+    };
+  }, [instanciaVistaId, modoJogador, lojaInstancias]);
+  const fontesDaVista = useMemo(
+    () => (instanciaVista && !modoJogador ? Object.values(instanciaVista.luzes) : []),
+    [instanciaVista, modoJogador],
+  );
 
   /** O mestre soltou no mapa uma ficha ou um monstro do compêndio, vindos da gaveta de tokens. */
   const soltarToken = useCallback(
@@ -986,6 +1133,17 @@ function Editor({
 
   useEffect(
     () =>
+      manterExploracaoLocal(
+        lojaExploracao,
+        () => setMensagem({ tipo: 'erro', texto: 'O navegador recusou guardar a memória da névoa de masmorra.' }),
+        ARMAZENAMENTO,
+        localStorage,
+      ),
+    [lojaExploracao],
+  );
+
+  useEffect(
+    () =>
       manterNotificacoesLocal(
         lojaNotificacoes,
         () => setMensagem({ tipo: 'erro', texto: 'O navegador recusou guardar as notificações.' }),
@@ -1102,6 +1260,23 @@ function Editor({
           return;
         }
       }
+      if (naInstancia && modoLuzes && !modoJogador) {
+        // Com a ferramenta de luzes: Esc desmarca, depois sai; Delete tira a luz marcada.
+        if (evento.key === 'Escape') {
+          if (luzSelecionada) {
+            setLuzSelecionada(null);
+          } else {
+            setModoLuzes(false);
+          }
+          return;
+        }
+        if ((evento.key === 'Delete' || evento.key === 'Backspace') && luzSelecionada && instanciaVista) {
+          evento.preventDefault();
+          lojaInstancias.despachar({ tipo: 'ApagarLuz', instanciaId: instanciaVista.id, luzId: luzSelecionada });
+          setLuzSelecionada(null);
+          return;
+        }
+      }
       if (naInstancia && evento.key === 'Escape' && (reguaLigada || fichaAberta)) {
         // A régua e a ficha aberta fecham primeiro, para o mestre e para o jogador.
         if (reguaLigada) {
@@ -1182,6 +1357,8 @@ function Editor({
     desenhandoParede,
     paredeSelecionada,
     instanciaVista,
+    modoLuzes,
+    luzSelecionada,
   ]);
 
   const pontoDoEvento = (evento: DragEvent<HTMLElement>): PontoMundo | null => {
@@ -1341,6 +1518,7 @@ function Editor({
           lojaCompendio={lojaCompendio}
           lojaFichas={lojaFichas}
           lojaInstancias={lojaInstancias}
+          lojaExploracao={lojaExploracao}
           lojaRegras={lojaRegras}
           aoAbrirMapa={(estado) => {
             setHexSelecionado(null);
@@ -1437,6 +1615,11 @@ function Editor({
             aoSoltar={modoJogador ? null : soltarToken}
             foco={focoNaInstancia?.instanciaId === instanciaVista.id ? focoNaInstancia : null}
             paredes={paredesDaVista}
+            luz={luzDaVista}
+            fontesDeLuz={fontesDaVista}
+            modoLuzes={modoLuzes && !modoJogador}
+            luzSelecionada={luzSelecionada}
+            eventosLuzes={eventosDasLuzes}
             verLinhas={!modoJogador}
             modoParedes={modoJogador ? null : modoParedes}
             paredeSelecionada={paredeSelecionada}
@@ -1484,15 +1667,50 @@ function Editor({
               aoAlternarRegua={() => {
                 setMedindo(false);
                 setModoParedes(null);
+                setModoLuzes(false);
                 setReguaLigada(!reguaLigada);
               }}
               editandoParedes={modoParedes !== null}
               aoAlternarParedes={() => {
                 setReguaLigada(false);
                 setMedindo(false);
+                setModoLuzes(false);
                 setParedeSelecionada(null);
                 setModoParedes(modoParedes ? null : { tipo: 'desenhar', tipoDeParede: 'parede', secreta: false });
               }}
+              editandoLuzes={modoLuzes}
+              aoAlternarLuzes={() => {
+                setReguaLigada(false);
+                setMedindo(false);
+                setModoParedes(null);
+                setLuzSelecionada(null);
+                setModoLuzes(!modoLuzes);
+              }}
+              previaDaLuz={previaDaLuz}
+              aoAlternarPrevia={() => setPreviaDaLuz(!previaDaLuz)}
+              barraDeLuzes={
+                modoLuzes && !modoJogador ? (
+                  <BarraDeLuzes
+                    instancia={instanciaVista}
+                    aoEditarInstancia={(mudancas) =>
+                      lojaInstancias.despachar({ tipo: 'EditarInstancia', instanciaId: instanciaVista.id, mudancas })
+                    }
+                    selecionada={(luzSelecionada && instanciaVista.luzes[luzSelecionada]) || null}
+                    aoEditarLuz={(luz) => lojaInstancias.despachar({ tipo: 'EditarLuz', instanciaId: instanciaVista.id, luz })}
+                    aoApagarLuz={() => {
+                      if (luzSelecionada) {
+                        lojaInstancias.despachar({ tipo: 'ApagarLuz', instanciaId: instanciaVista.id, luzId: luzSelecionada });
+                        setLuzSelecionada(null);
+                      }
+                    }}
+                    aoEsquecer={() => {
+                      if (window.confirm('Os jogadores esquecem tudo o que já viram nesta instância. Isso não se desfaz. Continuar?')) {
+                        lojaExploracao.esquecer(sessao.autorId, instanciaVista.id);
+                      }
+                    }}
+                  />
+                ) : null
+              }
               barraDeParedes={
                 modoParedes && !modoJogador ? (
                   <BarraDeParedes
@@ -1608,6 +1826,12 @@ function Editor({
           <JanelaToken
             token={instancias.instancias[instanciaVista.id].tokens[tokenEmConfiguracao]}
             ficha={fichas.fichas[instancias.instancias[instanciaVista.id].tokens[tokenEmConfiguracao].fichaId]}
+            luzDaFicha={(() => {
+              const token = instancias.instancias[instanciaVista.id].tokens[tokenEmConfiguracao];
+              const ficha = fichas.fichas[token.fichaId];
+              // Sem a luz própria do token, para mostrar só o que vem da ficha.
+              return ficha ? luzDoToken({ ...token, luz: undefined }, visaoDaFicha(ficha, regras)) : null;
+            })()}
             aoSalvar={(mudancas) => {
               lojaInstancias.despachar({ tipo: 'EditarToken', instanciaId: instanciaVista.id, tokenId: tokenEmConfiguracao, mudancas });
               setTokenEmConfiguracao(null);

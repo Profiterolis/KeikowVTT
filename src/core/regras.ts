@@ -128,6 +128,10 @@ export const VALORES_DE_VIAGEM: Readonly<Record<string, { readonly rotulo: strin
   aptidao_idiomas: { rotulo: 'Aptidão para idiomas (soma ao estudo)', padrao: 0 },
   aptidao_magia: { rotulo: 'Aptidão para magia (soma ao estudo)', padrao: 0 },
   aptidao_fisica: { rotulo: 'Aptidão física (soma ao treino)', padrao: 0 },
+  // Nas instâncias (Fase 6): até onde enxerga no escuro e a luz que carrega (uma tocha equipada).
+  visao_no_escuro: { rotulo: 'Visão no escuro (m)', padrao: 0 },
+  luz_clara: { rotulo: 'Luz que carrega: luz clara (m)', padrao: 0 },
+  luz_penumbra: { rotulo: 'Luz que carrega: penumbra além da clara (m)', padrao: 0 },
 };
 
 /** Um guia (1) tira a penalidade de um tipo de terreno para o grupo todo, como `guia_floresta`. */

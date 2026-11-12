@@ -1,3 +1,4 @@
+import { serializarExploracao, type EstadoExploracao } from './exploracao';
 import type { EstadoCampanha, Participante } from './campanha';
 import { ID_MESTRE } from './campanha';
 import type { EstadoGrupo } from './grupo';
@@ -135,7 +136,10 @@ export function desserializarCampanha(texto: string): ResultadoDe<ConteudoCampan
   });
 }
 
-/** O arquivo do botão Salvar: o mapa, com os dados da campanha, o compêndio, as fichas e as instâncias junto. */
+/**
+ * O arquivo do botão Salvar: o mapa, com os dados da campanha, o compêndio, as fichas, as instâncias
+ * e a memória da névoa de masmorra junto.
+ */
 export function serializarArquivoCompleto(
   estado: EstadoMapa,
   grupo: EstadoGrupo,
@@ -143,6 +147,7 @@ export function serializarArquivoCompleto(
   compendio?: EstadoCompendio,
   fichas?: EstadoFichas,
   instancias?: EstadoInstancias,
+  exploracao?: EstadoExploracao,
 ): string {
   return JSON.stringify(
     {
@@ -151,6 +156,7 @@ export function serializarArquivoCompleto(
       ...(compendio ? { compendio: compendioParaObjeto(compendio) } : {}),
       ...(fichas ? { fichas: fichasParaObjeto(fichas) } : {}),
       ...(instancias ? { instancias: instanciasParaObjeto(instancias) } : {}),
+      ...(exploracao ? { exploracao: JSON.parse(serializarExploracao(exploracao)) } : {}),
     },
     null,
     2,

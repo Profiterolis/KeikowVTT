@@ -26,6 +26,7 @@ import type { EstadoFichas, LojaFichas } from '../core/fichas';
 import { desserializarFichas, serializarFichas } from '../core/persistenciaFichas';
 import type { EstadoInstancias, LojaInstancias } from '../core/instancias';
 import { desserializarInstancias, serializarInstancias } from '../core/persistenciaInstancias';
+import { desserializarExploracao, serializarExploracao, type EstadoExploracao, type LojaExploracao } from '../core/exploracao';
 import {
   desserializarRolagens,
   serializarRolagens,
@@ -414,6 +415,35 @@ export function manterInstanciasLocal(
     DOCUMENTO_INSTANCIAS,
     () => serializarInstancias(lojaInstancias.obterEstado()),
     [lojaInstancias.assinar],
+    aoFalhar,
+    { principal, rapido },
+  );
+}
+
+const DOCUMENTO_EXPLORACAO = {
+  chave: 'keikow.exploracao',
+  chaveEmergencia: 'keikow.exploracao.emergencia',
+  desserializar: desserializarExploracao,
+};
+
+/** Lê a memória da névoa de masmorra, ou `null` se ainda não houver nada. */
+export function lerExploracaoLocal(
+  principal: ArmazenamentoLocal,
+  rapido: ArmazenamentoRapido,
+): Promise<ResultadoDe<{ readonly estado: EstadoExploracao }> | null> {
+  return lerDocumento(DOCUMENTO_EXPLORACAO, { principal, rapido });
+}
+
+export function manterExploracaoLocal(
+  lojaExploracao: LojaExploracao,
+  aoFalhar: () => void,
+  principal: ArmazenamentoLocal,
+  rapido: ArmazenamentoRapido,
+): () => void {
+  return manterDocumento(
+    DOCUMENTO_EXPLORACAO,
+    () => serializarExploracao(lojaExploracao.obterEstado()),
+    [lojaExploracao.assinar],
     aoFalhar,
     { principal, rapido },
   );

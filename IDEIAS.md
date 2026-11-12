@@ -60,6 +60,8 @@ Ideias aleatórias para o KeikowVTT:
 - Planejador de aventura (ou de sessão): um lugar onde o mestre junta tudo o que pretende usar numa sessão da campanha, arrastando instâncias, NPCs, itens, notas e o que mais for preciso, para ter tudo à mão na hora do jogo. Liga com as instâncias (Fase 6), as fichas e o compêndio.
 - Modo de batalha nas instâncias: fora do combate, o movimento é livre pela instância inteira; quando os jogadores entram em combate, as regras mudam e entram os turnos e o cálculo de movimento. Iniciativa rolada com 1d4 + modificador de Destreza + bônus de talentos e equipamentos, tudo editável nas regras da campanha. Empate ainda a decidir; a recomendação do Claude: aliados empatados agem juntos, no mesmo turno e na ordem que quiserem (como no Baldur's Gate 3); empate entre lados opostos desempata pelo maior valor de Destreza e, persistindo, por uma rolagem. (Para a Fase 8.)
 - Tokens inquebráveis: alguns tokens e objetos do mapa (portas, paredes, baús...) não podem ser quebrados, talvez marcados por etiquetas; os outros poderiam ser destruídos.
+- Furtividade como no Baldur's Gate 3: quem passa no teste de Furtividade fica invisível para os outros; a chance de passar depende da visão de cada token que pode perceber (inclusive NPCs e criaturas do mestre), da luz e da escuridão. (Proposta como passo 6b da Fase 6.)
+- Itens e efeitos que removem luz, não só criam: por exemplo um item mágico que rouba temporariamente as fontes de luz do ambiente atual. Junto com a magia Darkness, as regiões de escuridão (passo 9) e acender braseiros.
 
 ## Deixado para depois nos planos já feitos
 

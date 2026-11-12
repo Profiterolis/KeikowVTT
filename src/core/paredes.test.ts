@@ -26,8 +26,9 @@ import {
   trechosLivres,
 } from './paredes';
 import { desserializarInstancias, serializarInstancias } from './persistenciaInstancias';
-import { movimentoDoToken, novoToken, permissaoParaPorta, type ContextoDasInstancias } from './tokens';
+import { conferirInstancias, movimentoDoToken, novoToken, permissaoParaPorta, type ContextoDasInstancias } from './tokens';
 import { criarFicha } from './fichas';
+import { novaFonteDeLuz } from './luz';
 
 const aplicar = (estado: EstadoInstancias, ...acoes: AcaoInstancias[]) => acoes.reduce(aplicarAcaoInstancias, estado);
 
@@ -280,5 +281,70 @@ describe('porta desenhada sobre uma parede', () => {
     expect(Object.keys(estado.instancias.sala.paredes).sort()).toEqual(['p', 'w', 'w~p']);
     const sala = estado.instancias.sala;
     expect(movimentoDoToken(sala, sala.tokens.t, { x: 450, y: 800 }, contexto).final.y).toBeCloseTo(800, 0);
+  });
+});
+
+describe('luzes da instância (passo 6)', () => {
+  const contexto: ContextoDasInstancias = {
+    obterDonoDaFicha: (id) => (id === 'lyra' ? 'j-ana' : null),
+    obterFicha: (id) => (id === 'lyra' ? criarFicha('personagem', id, 'j-ana') : undefined),
+  };
+  const base = aplicar(
+    criarInstanciasVazias(),
+    { tipo: 'CriarInstancia', instancia: novaInstancia('cripta', 'Cripta', null) },
+    { tipo: 'ColocarToken', instanciaId: 'cripta', token: novoToken('t-lyra', 'lyra', 400, 500), levar: ['j-ana'] },
+  );
+  const comLuz = aplicar(base, { tipo: 'CriarLuz', instanciaId: 'cripta', luz: novaFonteDeLuz('l1', 100, 100) });
+
+  it('cria, edita, apaga; luz com problema não entra', () => {
+    expect(comLuz.instancias.cripta.luzes.l1).toMatchObject({ clara: 6, penumbra: 6, ligada: true });
+    const apagada = aplicar(comLuz, { tipo: 'EditarLuz', instanciaId: 'cripta', luz: { ...comLuz.instancias.cripta.luzes.l1, ligada: false } });
+    expect(apagada.instancias.cripta.luzes.l1.ligada).toBe(false);
+    expect(aplicar(comLuz, { tipo: 'EditarLuz', instanciaId: 'cripta', luz: { ...comLuz.instancias.cripta.luzes.l1, clara: -1 } })).toBe(comLuz);
+    expect(aplicar(comLuz, { tipo: 'ApagarLuz', instanciaId: 'cripta', luzId: 'l1' }).instancias.cripta.luzes).toEqual({});
+    // Duplicar leva as luzes junto.
+    const copia = aplicar(comLuz, { tipo: 'DuplicarInstancia', instanciaId: 'cripta', novoId: 'copia' });
+    expect(Object.keys(copia.instancias.copia.luzes)).toEqual(['l1']);
+  });
+
+  it('o jogador não mexe nas luzes, na luz do ambiente nem na luz dos tokens', () => {
+    const recusa = (depois: EstadoInstancias) => conferirInstancias(comLuz, depois, 'j-ana', contexto).ok;
+    expect(recusa(aplicar(comLuz, { tipo: 'ApagarLuz', instanciaId: 'cripta', luzId: 'l1' }))).toBe(false);
+    expect(recusa(aplicar(comLuz, { tipo: 'EditarInstancia', instanciaId: 'cripta', mudancas: { luzAmbiente: 'escuridao' } }))).toBe(false);
+    const luz = { clara: 6, penumbra: 6, cor: 0xffffff, tremular: false };
+    expect(recusa(aplicar(comLuz, { tipo: 'EditarToken', instanciaId: 'cripta', tokenId: 't-lyra', mudancas: { luz } }))).toBe(false);
+  });
+
+  it('a luz do token: pôr, trocar e tirar', () => {
+    const luz = { clara: 6, penumbra: 6, cor: 0xffffff, tremular: false };
+    const posta = aplicar(comLuz, { tipo: 'EditarToken', instanciaId: 'cripta', tokenId: 't-lyra', mudancas: { luz } });
+    expect(posta.instancias.cripta.tokens['t-lyra'].luz).toEqual(luz);
+    // Mudar outra coisa mantém a luz.
+    const renomeada = aplicar(posta, { tipo: 'EditarToken', instanciaId: 'cripta', tokenId: 't-lyra', mudancas: { nomeNoMapa: 'X' } });
+    expect(renomeada.instancias.cripta.tokens['t-lyra'].luz).toEqual(luz);
+    const tirada = aplicar(posta, { tipo: 'EditarToken', instanciaId: 'cripta', tokenId: 't-lyra', mudancas: { luz: null } });
+    expect('luz' in tirada.instancias.cripta.tokens['t-lyra']).toBe(false);
+  });
+
+  it('salva e lê as luzes; a versão 3 abre com luz clara, escurecendo e sem luzes', () => {
+    const comTudo = aplicar(
+      comLuz,
+      { tipo: 'EditarInstancia', instanciaId: 'cripta', mudancas: { luzAmbiente: 'relogio', visao: 'masmorra' } },
+      { tipo: 'EditarToken', instanciaId: 'cripta', tokenId: 't-lyra', mudancas: { luz: { clara: 1.5, penumbra: 1.5, cor: 0xffaa00, tremular: true } } },
+    );
+    const lida = desserializarInstancias(serializarInstancias(comTudo));
+    expect(lida.ok && lida.estado).toEqual(comTudo);
+    const v3 = JSON.parse(serializarInstancias(comTudo));
+    v3.versao = 3;
+    for (const i of v3.instancias) {
+      delete i.luzes;
+      delete i.luzAmbiente;
+      delete i.visao;
+    }
+    const convertida = desserializarInstancias(JSON.stringify(v3));
+    expect(convertida.ok && convertida.estado.instancias.cripta).toMatchObject({ luzes: {}, luzAmbiente: 'clara', visao: 'escurecer' });
+    const ruim = JSON.parse(serializarInstancias(comTudo));
+    ruim.instancias[0].luzAmbiente = 'neon';
+    expect(desserializarInstancias(JSON.stringify(ruim)).ok).toBe(false);
   });
 });

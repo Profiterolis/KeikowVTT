@@ -6,6 +6,9 @@ import type { EventosDosTokens } from '../render/camadaTokens';
 import type { EventosDasParedes, ModoParedes } from '../render/camadaParedes';
 import type { Parede } from '../core/paredes';
 import { criarCenaInstancia, type CenaInstancia } from '../render/cenaInstancia';
+import type { VisaoParaDesenhar } from '../render/camadaLuz';
+import type { EventosDasLuzes } from '../render/camadaFontesDeLuz';
+import type { FonteDeLuz } from '../core/luz';
 import { useBancoDeImagens } from './contextoImagens';
 
 /** O tipo dos dados arrastados da gaveta de tokens até o mapa. */
@@ -47,6 +50,11 @@ export function VistaInstancia({
   paredeSelecionada,
   eventosParedes,
   pedidoDeTermino,
+  luz,
+  fontesDeLuz,
+  modoLuzes,
+  luzSelecionada,
+  eventosLuzes,
 }: {
   readonly instancia: Instancia;
   /** Com a régua da escala ligada, recebe a distância medida em pixels; `null` desliga a régua. */
@@ -67,6 +75,13 @@ export function VistaInstancia({
   readonly eventosParedes: EventosDasParedes | null;
   /** Muda a cada Esc: termina a linha que está sendo desenhada. */
   readonly pedidoDeTermino: number;
+  /** A luz e a visão de quem olha; `null` não escurece nada. */
+  readonly luz: VisaoParaDesenhar | null;
+  /** Os marcadores das luzes do mapa (só o mestre). */
+  readonly fontesDeLuz: readonly FonteDeLuz[];
+  readonly modoLuzes: boolean;
+  readonly luzSelecionada: string | null;
+  readonly eventosLuzes: EventosDasLuzes | null;
 }) {
   const banco = useBancoDeImagens();
   const areaRef = useRef<HTMLDivElement>(null);
@@ -130,6 +145,27 @@ export function VistaInstancia({
   useEffect(() => {
     cenaRef.current?.aoParedes(eventosParedes);
   }, [eventosParedes]);
+
+  useEffect(() => {
+    cenaRef.current?.luz(luz);
+  }, [luz]);
+
+  // Depois de mostrar a instância (a escala dos círculos vem dela).
+  useEffect(() => {
+    cenaRef.current?.fontesDeLuz(fontesDeLuz);
+  }, [fontesDeLuz, instancia.metrosPorPixel]);
+
+  useEffect(() => {
+    cenaRef.current?.modoLuzes(modoLuzes);
+  }, [modoLuzes]);
+
+  useEffect(() => {
+    cenaRef.current?.luzSelecionada(luzSelecionada);
+  }, [luzSelecionada]);
+
+  useEffect(() => {
+    cenaRef.current?.aoLuzes(eventosLuzes);
+  }, [eventosLuzes]);
 
   useEffect(() => {
     if (pedidoDeTermino > 0) {

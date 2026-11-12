@@ -82,6 +82,11 @@ function fixosDoMonstro(monstro: EntradaDe<'monstro'>, regras: Regras): EntradaD
   if (deslocamento) {
     fixos.deslocamento = { valor: Number(deslocamento[0].replace(',', '.')), origem: d.deslocamento };
   }
+  // Como o 36 de "darkvision 36 m, passive Perception 20".
+  const noEscuro = /darkvision\s+(\d+(?:[.,]\d+)?)\s*m/i.exec(d.sentidos);
+  if (noEscuro) {
+    fixos.visao_no_escuro = { valor: Number(noEscuro[1].replace(',', '.')), origem: d.sentidos };
+  }
   for (const [atributo, valor] of Object.entries(d.salvaguardas) as [Atributo, number][]) {
     fixos[idSalvaguarda(atributo)] = { valor, origem };
   }

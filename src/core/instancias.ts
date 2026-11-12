@@ -7,9 +7,9 @@
  * jogadores de uma cena a outra. O próprio mestre passeia por qualquer cena sem levar ninguém,
  * então a cena dele não é guardada.
  *
- * Os tokens (passo 4) e as paredes (passo 5) ficam dentro de cada instância; as regras deles
- * estão em `tokens.ts` e `paredes.ts`. A luz, os itens e as regiões chegam nos passos seguintes da fase,
- * cada um como um campo novo da instância.
+ * Os tokens (passo 4), as paredes (passo 5) e a luz (passo 6) ficam dentro de cada instância; as
+ * regras deles estão em `tokens.ts`, `paredes.ts`, `luz.ts` e `visaoTatica.ts`. Os itens e as regiões
+ * chegam nos passos seguintes da fase, cada um como um campo novo da instância.
  */
 import type { CoordHex } from './hex';
 import { chaveHex } from './hex';
@@ -28,6 +28,15 @@ import {
   type TokenNaInstancia,
 } from './tokens';
 import { ehMestre } from './visibilidade';
+import {
+  LUZES_DO_AMBIENTE,
+  MODOS_DE_VISAO,
+  problemaNaFonte,
+  problemaNaLuz,
+  type FonteDeLuz,
+  type LuzDoAmbiente,
+  type ModoDeVisao,
+} from './luz';
 
 /** Onde um jogador está: no mapa-mundi ou dentro de uma instância. */
 export type Cena = { readonly tipo: 'mapa' } | { readonly tipo: 'instancia'; readonly instanciaId: string };
@@ -62,6 +71,12 @@ export interface Instancia {
   readonly movimentoTravado: boolean;
   /** Paredes, portas e janelas, pelo id. */
   readonly paredes: Readonly<Record<string, Parede>>;
+  /** A luz do ambiente: clara, penumbra, escuridão ou pela hora do relógio do mundo. */
+  readonly luzAmbiente: LuzDoAmbiente;
+  /** O que os jogadores veem fora da visão dos personagens. */
+  readonly visao: ModoDeVisao;
+  /** Fontes de luz postas pelo mestre (braseiros, lustres), pelo id. */
+  readonly luzes: Readonly<Record<string, FonteDeLuz>>;
 }
 
 export interface EstadoInstancias {
@@ -100,6 +115,9 @@ export function novaInstancia(id: string, nome: string, hex: CoordHex | null): I
     tokens: {},
     movimentoTravado: false,
     paredes: {},
+    luzAmbiente: 'clara',
+    visao: 'escurecer',
+    luzes: {},
   };
 }
 
@@ -131,6 +149,18 @@ export function problemaNaInstancia(instancia: Instancia): string | null {
       return problema;
     }
   }
+  for (const [id, fonte] of Object.entries(instancia.luzes)) {
+    const problema = id === fonte.id ? problemaNaFonte(fonte) : 'Uma luz está guardada com o id errado.';
+    if (problema) {
+      return problema;
+    }
+  }
+  if (!(LUZES_DO_AMBIENTE as readonly string[]).includes(instancia.luzAmbiente)) {
+    return 'A luz do ambiente não é válida.';
+  }
+  if (!(MODOS_DE_VISAO as readonly string[]).includes(instancia.visao)) {
+    return 'O modo da visão não é válido.';
+  }
   const fichas = Object.values(instancia.tokens).map((t) => t.fichaId);
   if (new Set(fichas).size !== fichas.length) {
     return 'Uma ficha tem dois tokens na mesma instância.';
@@ -138,8 +168,8 @@ export function problemaNaInstancia(instancia: Instancia): string | null {
   return null;
 }
 
-/** Os tokens e as paredes mudam pelas ações próprias deles, não por aqui. */
-export type MudancasNaInstancia = Partial<Omit<Instancia, 'id' | 'tokens' | 'paredes'>>;
+/** Os tokens, as paredes e as luzes mudam pelas ações próprias deles, não por aqui. */
+export type MudancasNaInstancia = Partial<Omit<Instancia, 'id' | 'tokens' | 'paredes' | 'luzes'>>;
 
 export type AcaoInstancias =
   | { readonly tipo: 'CriarInstancia'; readonly instancia: Instancia }
@@ -196,6 +226,10 @@ export type AcaoInstancias =
       readonly estado?: EstadoDaPorta;
       readonly secreta?: boolean;
     }
+  /** Fontes de luz do mapa (só o mestre): pôr, trocar (mover, mudar os raios, ligar e desligar) e apagar. */
+  | { readonly tipo: 'CriarLuz'; readonly instanciaId: string; readonly luz: FonteDeLuz }
+  | { readonly tipo: 'EditarLuz'; readonly instanciaId: string; readonly luz: FonteDeLuz }
+  | { readonly tipo: 'ApagarLuz'; readonly instanciaId: string; readonly luzId: string }
   | { readonly tipo: 'CarregarInstancias'; readonly estado: EstadoInstancias };
 
 /** Uma cena que aponta para uma instância que não existe vira o mapa-mundi. */
@@ -331,6 +365,23 @@ function comParedes(
   return comInstancia(estado, { ...instancia, paredes });
 }
 
+/** A instância com as luzes trocadas; nada muda se a instância não existe ou se uma luz tem problema. */
+function comLuzes(
+  estado: EstadoInstancias,
+  instanciaId: string,
+  mudar: (luzes: Readonly<Record<string, FonteDeLuz>>, instancia: Instancia) => Readonly<Record<string, FonteDeLuz>>,
+): EstadoInstancias {
+  const instancia = estado.instancias[instanciaId];
+  if (!instancia) {
+    return estado;
+  }
+  const luzes = mudar(instancia.luzes, instancia);
+  if (luzes === instancia.luzes || Object.values(luzes).some((l) => problemaNaFonte(l))) {
+    return estado;
+  }
+  return comInstancia(estado, { ...instancia, luzes });
+}
+
 /** Mudou o tamanho do mapa: os tokens que ficariam fora voltam para a borda. */
 function tokensDentroDoMapa(instancia: Instancia): Instancia {
   let mudou = false;
@@ -383,6 +434,7 @@ export function aplicarAcaoInstancias(estado: EstadoInstancias, acao: AcaoInstan
         id: atual.id,
         tokens: atual.tokens,
         paredes: atual.paredes,
+        luzes: atual.luzes,
       });
       if (mesmaInstancia(editada, atual) || problemaNaInstancia(editada)) {
         return estado;
@@ -462,8 +514,14 @@ export function aplicarAcaoInstancias(estado: EstadoInstancias, acao: AcaoInstan
         }
         // Só os campos que se editam; posição, ficha e id ficam.
         const { tamanho, escondido, travado, nomeNoMapa } = { ...token, ...acao.mudancas };
-        const editado: TokenNaInstancia = { ...token, tamanho, escondido, travado, nomeNoMapa };
-        return mesmaInstancia(editado, token) || !tamanhoValido(tamanho) ? tokens : { ...tokens, [token.id]: editado };
+        const { luz: _luz, ...semLuz } = token;
+        // A luz própria: `null` tira (volta a valer a da ficha); sem o campo, fica a que estava.
+        const luz = acao.mudancas.luz === undefined ? token.luz : acao.mudancas.luz;
+        const editado: TokenNaInstancia = { ...semLuz, tamanho, escondido, travado, nomeNoMapa, ...(luz ? { luz } : {}) };
+        if (mesmaInstancia(editado, token) || !tamanhoValido(tamanho) || (luz && problemaNaLuz(luz))) {
+          return tokens;
+        }
+        return { ...tokens, [token.id]: editado };
       });
     case 'TirarToken':
       return comTokens(estado, acao.instanciaId, (tokens) => {
@@ -508,6 +566,28 @@ export function aplicarAcaoInstancias(estado: EstadoInstancias, acao: AcaoInstan
         }
         const mudada: Parede = { ...porta, estado: acao.estado ?? porta.estado, secreta: acao.secreta ?? porta.secreta };
         return mesmaInstancia(mudada, porta) ? paredes : { ...paredes, [porta.id]: mudada };
+      });
+    case 'CriarLuz':
+      return comLuzes(estado, acao.instanciaId, (luzes, instancia) =>
+        acao.luz.id in luzes
+          ? luzes
+          : { ...luzes, [acao.luz.id]: { ...acao.luz, ...dentroDoMapa(instancia, acao.luz.x, acao.luz.y) } },
+      );
+    case 'EditarLuz':
+      return comLuzes(estado, acao.instanciaId, (luzes, instancia) => {
+        if (!(acao.luz.id in luzes)) {
+          return luzes;
+        }
+        const luz = { ...acao.luz, ...dentroDoMapa(instancia, acao.luz.x, acao.luz.y) };
+        return mesmaInstancia(luz, luzes[luz.id]) ? luzes : { ...luzes, [luz.id]: luz };
+      });
+    case 'ApagarLuz':
+      return comLuzes(estado, acao.instanciaId, (luzes) => {
+        if (!(acao.luzId in luzes)) {
+          return luzes;
+        }
+        const { [acao.luzId]: _apagada, ...restantes } = luzes;
+        return restantes;
       });
     case 'CarregarInstancias':
       return acao.estado;

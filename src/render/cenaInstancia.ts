@@ -4,7 +4,7 @@
  * É separada da cena do mapa-mundi: cada uma tem a própria câmera e as próprias camadas.
  * Só desenha; quem decide o que muda são as lojas do `core/`.
  */
-import { Application, Container, Graphics, Sprite, Text, Texture } from 'pixi.js';
+import { Application, ColorMatrixFilter, Container, Graphics, Sprite, Text, Texture } from 'pixi.js';
 import { Viewport } from 'pixi-viewport';
 import { pixelsEmMetros, type Instancia } from '../core/instancias';
 import type { PontoMundo } from '../core/hex';
@@ -12,6 +12,9 @@ import type { CarregarImagem } from './camadaGrupo';
 import { criarCamadaTokens, type EventosDosTokens, type TokenParaDesenhar } from './camadaTokens';
 import { criarCamadaParedes, type EventosDasParedes, type ModoParedes } from './camadaParedes';
 import type { Parede } from '../core/paredes';
+import { criarCamadaLuz, type VisaoParaDesenhar } from './camadaLuz';
+import { criarCamadaFontesDeLuz, type EventosDasLuzes } from './camadaFontesDeLuz';
+import type { FonteDeLuz } from '../core/luz';
 
 const ZOOM_MINIMO = 0.02;
 const ZOOM_MAXIMO = 8;
@@ -45,6 +48,14 @@ export interface CenaInstancia {
   modoParedes(modo: ModoParedes): void;
   paredeSelecionada(paredeId: string | null): void;
   terminarDesenho(): void;
+  /** A luz e a visão de quem olha; `null` não escurece nada. */
+  luz(dados: VisaoParaDesenhar | null): void;
+  /** Os marcadores das fontes de luz (só o mestre; vazio para os jogadores). */
+  fontesDeLuz(lista: readonly FonteDeLuz[]): void;
+  /** A ferramenta "💡 Luzes" do mestre. */
+  modoLuzes(ativa: boolean): void;
+  luzSelecionada(luzId: string | null): void;
+  aoLuzes(eventos: EventosDasLuzes | null): void;
   aoParedes(eventos: EventosDasParedes | null): void;
   /** Leva a câmera, deslizando, até um ponto da instância (o token de um jogador, no "Ir até"). */
   centralizarEm(x: number, y: number): void;
@@ -52,6 +63,9 @@ export interface CenaInstancia {
   paraMundo(clientX: number, clientY: number): PontoMundo | null;
   destruir(): void;
 }
+
+/** O que a cena montada faz; `liberar` solta o que não é do PixiJS (o desenho da luz marcado para o próximo quadro). */
+type Controles = Omit<CenaInstancia, 'destruir' | 'aoTokens' | 'aoParedes' | 'aoLuzes'> & { liberar(): void };
 
 function carregarElemento(endereco: string): Promise<HTMLImageElement | null> {
   return new Promise((resolver) => {
@@ -89,7 +103,7 @@ export function criarCenaInstancia(container: HTMLElement, carregarImagem: Carre
   let pronta = false;
   let destruida = false;
   let pendente: Instancia | null = null;
-  let controles: Omit<CenaInstancia, 'destruir' | 'aoTokens' | 'aoParedes'> | null = null;
+  let controles: Controles | null = null;
   let medicaoPendente: ((pixels: number) => void) | null = null;
   let reguaPendente = false;
   let tokensPendentes: readonly TokenParaDesenhar[] = [];
@@ -97,6 +111,11 @@ export function criarCenaInstancia(container: HTMLElement, carregarImagem: Carre
   let paredesPendentes: { lista: readonly Parede[]; verLinhas: boolean } = { lista: [], verLinhas: false };
   let modoParedesPendente: ModoParedes = null;
   let selecionadaPendente: string | null = null;
+  let luzPendente: VisaoParaDesenhar | null = null;
+  let fontesPendentes: readonly FonteDeLuz[] = [];
+  let modoLuzesPendente = false;
+  let luzSelecionadaPendente: string | null = null;
+  let eventosDasLuzes: EventosDasLuzes | null = null;
   let eventosDasParedes: EventosDasParedes | null = null;
   /** Um "Ir até" pedido antes de a cena ficar pronta: vale logo depois do enquadramento. */
   let focoPendente: PontoMundo | null = null;
@@ -115,7 +134,7 @@ export function criarCenaInstancia(container: HTMLElement, carregarImagem: Carre
     }
     pronta = true;
     container.appendChild(app.canvas);
-    controles = montar(app, carregarImagem, () => eventosPendentes, () => eventosDasParedes);
+    controles = montar(app, carregarImagem, () => eventosPendentes, () => eventosDasParedes, () => eventosDasLuzes);
     controles.mostrar(pendente);
     controles.enquadrar();
     if (focoPendente) {
@@ -128,6 +147,10 @@ export function criarCenaInstancia(container: HTMLElement, carregarImagem: Carre
     controles.paredes(paredesPendentes.lista, paredesPendentes.verLinhas);
     controles.modoParedes(modoParedesPendente);
     controles.paredeSelecionada(selecionadaPendente);
+    controles.luz(luzPendente);
+    controles.fontesDeLuz(fontesPendentes);
+    controles.modoLuzes(modoLuzesPendente);
+    controles.luzSelecionada(luzSelecionadaPendente);
   };
   void iniciar();
 
@@ -165,6 +188,25 @@ export function criarCenaInstancia(container: HTMLElement, carregarImagem: Carre
       controles?.paredeSelecionada(id);
     },
     terminarDesenho: () => controles?.terminarDesenho(),
+    luz(dados) {
+      luzPendente = dados;
+      controles?.luz(dados);
+    },
+    fontesDeLuz(lista) {
+      fontesPendentes = lista;
+      controles?.fontesDeLuz(lista);
+    },
+    modoLuzes(ativa) {
+      modoLuzesPendente = ativa;
+      controles?.modoLuzes(ativa);
+    },
+    luzSelecionada(id) {
+      luzSelecionadaPendente = id;
+      controles?.luzSelecionada(id);
+    },
+    aoLuzes(eventos) {
+      eventosDasLuzes = eventos;
+    },
     aoParedes(eventos) {
       eventosDasParedes = eventos;
     },
@@ -178,6 +220,7 @@ export function criarCenaInstancia(container: HTMLElement, carregarImagem: Carre
     paraMundo: (clientX, clientY) => controles?.paraMundo(clientX, clientY) ?? null,
     destruir() {
       destruida = true;
+      controles?.liberar();
       controles = null;
       if (pronta) {
         app.destroy(true, { children: true, texture: true });
@@ -191,7 +234,8 @@ function montar(
   carregarImagem: CarregarImagem,
   eventosDosTokens: () => EventosDosTokens | null,
   eventosDasParedes: () => EventosDasParedes | null,
-): Omit<CenaInstancia, 'destruir' | 'aoTokens' | 'aoParedes'> {
+  eventosDasLuzes: () => EventosDasLuzes | null,
+): Controles {
   const camera = new Viewport({
     screenWidth: app.screen.width,
     screenHeight: app.screen.height,
@@ -208,21 +252,32 @@ function montar(
   app.renderer.on('resize', (largura: number, altura: number) => camera.resize(largura, altura));
 
   const fundo = new Container();
+  // Uma cópia do fundo em preto e branco, por baixo: aparece onde só a visão no escuro enxerga.
+  const fundoCinza = new Container();
+  const cinza = new ColorMatrixFilter();
+  cinza.desaturate();
+  fundoCinza.filters = [cinza];
+  fundoCinza.visible = false;
   const semImagem = new Graphics();
   const borda = new Graphics();
-  /** Os tokens; as paredes e a luz entram aqui também, entre o fundo e a régua, nos próximos passos. */
+  /** Paredes, portas e tokens, entre a luz e a régua. */
   const objetos = new Container();
-  const camadaTokens = criarCamadaTokens(camera, app.canvas, app.ticker, carregarImagem, eventosDosTokens);
+  const camadaLuz = criarCamadaLuz(app.renderer, app.ticker, fundo, fundoCinza);
+  const camadaTokens = criarCamadaTokens(camera, app.canvas, app.ticker, carregarImagem, eventosDosTokens, (id, ponto) =>
+    camadaLuz.moverToken(id, ponto),
+  );
   const camadaParedes = criarCamadaParedes(camera, app.canvas, eventosDasParedes);
+  const camadaFontes = criarCamadaFontesDeLuz(camera, app.canvas, eventosDasLuzes);
   // Paredes e ícones das portas ficam embaixo dos tokens: um token parado numa porta continua clicável.
-  objetos.addChild(camadaParedes.linhas, camadaParedes.icones, camadaTokens.container);
+  // Os marcadores das luzes (só o mestre) ficam por cima de tudo.
+  objetos.addChild(camadaParedes.linhas, camadaParedes.icones, camadaTokens.container, camadaFontes.container);
   const regua = new Graphics();
   const rotuloRegua = new Text({
     text: '',
     style: { fill: 0xffffff, fontSize: 16, fontFamily: 'system-ui, sans-serif', stroke: { color: 0x000000, width: 4 } },
   });
   rotuloRegua.visible = false;
-  camera.addChild(semImagem, fundo, borda, objetos, regua, rotuloRegua);
+  camera.addChild(semImagem, fundoCinza, fundo, camadaLuz.sombra, camadaLuz.brilho, borda, objetos, regua, rotuloRegua);
 
   let atual: Instancia | null = null;
   let imagemCarregada: string | null = null;
@@ -230,6 +285,10 @@ function montar(
   let numeroDaCarga = 0;
 
   const limparFundo = () => {
+    // A cópia cinza usa as mesmas texturas: some antes, sem destruí-las.
+    for (const filho of fundoCinza.removeChildren()) {
+      filho.destroy();
+    }
     for (const filho of fundo.removeChildren()) {
       filho.destroy({ texture: true, textureSource: true });
     }
@@ -270,6 +329,10 @@ function montar(
       sprite.position.set(x * escalaX, y * escalaY);
       sprite.scale.set(escalaX, escalaY);
       fundo.addChild(sprite);
+      const copia = new Sprite(textura);
+      copia.position.copyFrom(sprite.position);
+      copia.scale.copyFrom(sprite.scale);
+      fundoCinza.addChild(copia);
     }
   };
 
@@ -371,13 +434,15 @@ function montar(
   camera.on('zoomed', () => {
     camadaTokens.ajustarAoZoom();
     camadaParedes.ajustarAoZoom();
+    camadaFontes.ajustarAoZoom();
   });
 
   let modoDasParedes: ModoParedes = null;
+  let modoDasLuzes = false;
 
   /** Com uma régua ou a ferramenta de paredes ligada, o botão esquerdo é dela: os tokens não respondem. */
   const atualizarModo = () => {
-    const comRegua = aoMedir !== null || reguaLivre || modoDasParedes !== null;
+    const comRegua = aoMedir !== null || reguaLivre || modoDasParedes !== null || modoDasLuzes;
     camadaTokens.interativa(!comRegua);
     // O PixiJS controla o cursor da tela: a cruz da régua passa por ele.
     app.renderer.events.cursorStyles.default = comRegua ? 'crosshair' : 'inherit';
@@ -409,6 +474,15 @@ function montar(
     },
     paredeSelecionada: (id) => camadaParedes.selecionar(id),
     terminarDesenho: () => camadaParedes.terminarDesenho(),
+    luz: (dados) => camadaLuz.mostrar(dados),
+    liberar: () => camadaLuz.destruir(),
+    fontesDeLuz: (lista) => camadaFontes.mostrar(lista, atual?.metrosPorPixel ?? 0.015),
+    modoLuzes(ativa) {
+      modoDasLuzes = ativa;
+      camadaFontes.definirAtiva(ativa);
+      atualizarModo();
+    },
+    luzSelecionada: (id) => camadaFontes.selecionar(id),
     centralizarEm(x, y) {
       // Aproxima até um token comum ficar com uns 60 pixels na tela, se a câmera estiver mais longe.
       const escala = atual ? Math.min(Math.max(camera.scale.x, 60 / (1.5 / atual.metrosPorPixel)), ZOOM_MAXIMO) : camera.scale.x;

@@ -777,6 +777,10 @@ const cintoDeGigante = (forca: number): EfeitoPronto[] => [noMinimo('for', Strin
 /** Uma montaria: quem a tem viaja mais rápido (o grupo só acelera se todos tiverem uma). */
 const montaria = (fator: string): EfeitoPronto[] => [noMinimo('fator_viagem', fator)];
 /** Um veículo leva quantos couberem; o "no mínimo" fica com o melhor, se houver vários. */
+const luzNaMao = (clara: string, penumbra: string): EfeitoPronto[] => [
+  noMinimo('luz_clara', clara, 'equipado'),
+  noMinimo('luz_penumbra', penumbra, 'equipado'),
+];
 const veiculo = (tipo: 'terra' | 'agua', lugares: number, fator: string): EfeitoPronto[] => [
   noMinimo(`veiculo_${tipo}_lugares`, String(lugares)),
   noMinimo(`veiculo_${tipo}_fator`, fator),
@@ -843,6 +847,14 @@ const EFEITOS_PRONTOS: Readonly<Record<string, readonly EfeitoPronto[]>> = {
   'aura-of-protection': SALVAGUARDAS_TODAS.map((s) => somar(s, 'max(1, mod(CAR))')),
   // Traços de espécie.
   'dwarven-toughness': [somar('pv_maximos', 'nivel')],
+  // Visão e luz (Fase 6): 18 m de visão no escuro; luz levada na mão (equipada), clara e penumbra
+  // além dela. A bullseye ilumina em cone no livro; sem ângulo de visão, ilumina em volta como a hooded.
+  darkvision: [noMinimo('visao_no_escuro', '18')],
+  candle: luzNaMao('1.5', '1.5'),
+  torch: luzNaMao('6', '6'),
+  'lantern-hooded': luzNaMao('9', '9'),
+  'lantern-bullseye': luzNaMao('9', '9'),
+  'lantern-of-revealing': luzNaMao('9', '9'),
 };
 
 /** Os efeitos prontos de um registro da base, com ids estáveis. */

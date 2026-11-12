@@ -780,7 +780,7 @@ function alvosDosEfeitos(r: Regras): { grupo: string; opcoes: { id: string; nome
     { grupo: 'Valores', opcoes: r.valores.map((v) => ({ id: v.id, nome: v.nome })) },
     { grupo: 'Salvaguardas', opcoes: ATRIBUTOS.map((a) => ({ id: idSalvaguarda(a), nome: `Salvaguarda de ${r.atributos[a]}` })) },
     { grupo: 'Perícias', opcoes: r.pericias.map((p) => ({ id: p.id, nome: p.nome })) },
-    { grupo: 'Viagem e noite', opcoes: valoresDeViagem(r).map((v) => ({ id: v.id, nome: v.rotulo })) },
+    { grupo: 'Viagem, noite e visão', opcoes: valoresDeViagem(r).map((v) => ({ id: v.id, nome: v.rotulo })) },
   ];
 }
 

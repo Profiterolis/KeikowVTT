@@ -15,6 +15,7 @@ import { alcancaAPorta, deslizar, raioDoCorpo, trechosLivres, type Ponto } from 
 import { PERMITIDO, type Permissao } from './permissoes';
 import type { Regras } from './regras';
 import { ehMestre } from './visibilidade';
+import { problemaNaLuz, type PropriedadesDaLuz } from './luz';
 
 export type Tamanho = (typeof TAMANHOS)[number];
 
@@ -37,9 +38,17 @@ export interface TokenNaInstancia {
    * conferir que o caminho não atravessou paredes; na Fase 8, para animar a caminhada.
    */
   readonly caminho?: readonly Ponto[];
+  /**
+   * Luz posta pelo mestre no token (a magia Light, um brilho mágico). Vence a luz da ficha;
+   * sem ela, vale a da ficha (uma tocha equipada).
+   */
+  readonly luz?: PropriedadesDaLuz;
 }
 
-export type MudancasNoToken = Partial<Pick<TokenNaInstancia, 'tamanho' | 'escondido' | 'travado' | 'nomeNoMapa'>>;
+/** Na luz, `null` tira a luz própria do token e volta a valer a da ficha. */
+export type MudancasNoToken = Partial<Pick<TokenNaInstancia, 'tamanho' | 'escondido' | 'travado' | 'nomeNoMapa'>> & {
+  readonly luz?: PropriedadesDaLuz | null;
+};
 
 /**
  * O espaço que cada tamanho ocupa, em metros (o 5e conta em pés: 2,5 pés, 5, 10, 15, 20).
@@ -91,7 +100,7 @@ export function problemaNoToken(token: TokenNaInstancia): string | null {
   if (!tamanhoValido(token.tamanho)) {
     return `O tamanho do token precisa ficar entre ${TAMANHO_MINIMO} e ${TAMANHO_MAXIMO} m.`;
   }
-  return null;
+  return token.luz ? problemaNaLuz(token.luz) : null;
 }
 
 /** Mantém o centro do token dentro do mapa. */
@@ -268,6 +277,7 @@ export function conferirInstancias(
     if (a === d) {
       continue;
     }
+    // As luzes e a luz do ambiente ficam no resto: o jogador não mexe nelas.
     const { tokens: tokensAntes, paredes: paredesAntes, ...restoAntes } = a;
     const { tokens: tokensDepois, paredes: paredesDepois, ...restoDepois } = d;
     if (

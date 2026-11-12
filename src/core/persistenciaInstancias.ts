@@ -8,6 +8,7 @@ import { CENA_MAPA, problemaNaInstancia, type Cena, type EstadoInstancias, type 
 import { ehObjeto, exigir } from './leitura';
 import type { TokenNaInstancia } from './tokens';
 import { ESTADOS_DA_PORTA, TIPOS_DE_PAREDE, type Parede, type Ponto } from './paredes';
+import { LUZES_DO_AMBIENTE, MODOS_DE_VISAO, type FonteDeLuz, type LuzDoAmbiente, type ModoDeVisao, type PropriedadesDaLuz } from './luz';
 import type { ResultadoDe } from './persistencia';
 import { comoResultado, lerJson } from './persistenciaCompendio';
 
@@ -15,8 +16,10 @@ import { comoResultado, lerJson } from './persistenciaCompendio';
  * Aumente ao mudar o formato, com a conversão da versão anterior e um teste.
  * A 2 trouxe os tokens e a trava do movimento; a 1 abre sem tokens e destravada.
  * A 3 trouxe as paredes, portas e janelas; as anteriores abrem sem paredes.
+ * A 4 trouxe a luz do ambiente, o modo da visão e as fontes de luz; as anteriores abrem com luz clara,
+ * escurecendo fora da visão e sem fontes de luz.
  */
-export const VERSAO_INSTANCIAS = 3;
+export const VERSAO_INSTANCIAS = 4;
 
 function lerCoordOuNada(dado: unknown, onde: string): CoordHex | null {
   if (dado === null) {
@@ -34,13 +37,31 @@ function lerToken(dado: unknown, onde: string): TokenNaInstancia {
   exigir(tamanho === null || typeof tamanho === 'number', `${onde}: o tamanho não é válido.`);
   exigir(typeof escondido === 'boolean' && typeof travado === 'boolean', `${onde}: as travas não são válidas.`);
   exigir(typeof nomeNoMapa === 'string', `${onde} está sem o nome no mapa.`);
-  // Opcional, sem mudar a versão: os pontos do último movimento.
-  if (dado.caminho === undefined) {
-    return { id, fichaId, x, y, tamanho, escondido, travado, nomeNoMapa };
+  const token: TokenNaInstancia = { id, fichaId, x, y, tamanho, escondido, travado, nomeNoMapa };
+  // Opcionais: os pontos do último movimento e a luz posta pelo mestre (versão 4).
+  let comCaminho = token;
+  if (dado.caminho !== undefined) {
+    exigir(Array.isArray(dado.caminho), `${onde}: o caminho não é válido.`);
+    comCaminho = { ...token, caminho: dado.caminho.map((p) => lerPonto(p, onde)) };
   }
-  exigir(Array.isArray(dado.caminho), `${onde}: o caminho não é válido.`);
-  const caminho = dado.caminho.map((p) => lerPonto(p, onde));
-  return { id, fichaId, x, y, tamanho, escondido, travado, nomeNoMapa, caminho };
+  return dado.luz === undefined ? comCaminho : { ...comCaminho, luz: lerPropriedadesDaLuz(dado.luz, `${onde}: a luz`) };
+}
+
+function lerPropriedadesDaLuz(dado: unknown, onde: string): PropriedadesDaLuz {
+  exigir(ehObjeto(dado), `${onde} não é válida.`);
+  const { clara, penumbra, cor, tremular } = dado;
+  exigir(typeof clara === 'number' && typeof penumbra === 'number', `${onde} está sem os raios.`);
+  exigir(typeof cor === 'number' && typeof tremular === 'boolean', `${onde} está sem a cor.`);
+  return { clara, penumbra, cor, tremular };
+}
+
+function lerFonteDeLuz(dado: unknown, onde: string): FonteDeLuz {
+  exigir(ehObjeto(dado), `${onde} não é válida.`);
+  const { id, x, y, ligada } = dado;
+  exigir(typeof id === 'string', `${onde} está sem id.`);
+  exigir(typeof x === 'number' && typeof y === 'number', `${onde} está sem posição.`);
+  exigir(typeof ligada === 'boolean', `${onde}: o "ligada" não é válido.`);
+  return { id, x, y, ligada, ...lerPropriedadesDaLuz(dado, onde) };
 }
 
 function lerPonto(dado: unknown, onde: string): Ponto {
@@ -88,6 +109,19 @@ function lerInstancia(dado: unknown, onde: string, versao: number): Instancia {
     exigir(!(parede.id in paredes), `${onde}: a parede "${parede.id}" está repetida.`);
     paredes[parede.id] = parede;
   });
+  // Antes da versão 4, não havia luz: luz clara, escurecendo fora da visão.
+  const luzesGuardadas = versao >= 4 ? dado.luzes : [];
+  const luzAmbiente = versao >= 4 ? dado.luzAmbiente : 'clara';
+  const visao = versao >= 4 ? dado.visao : 'escurecer';
+  exigir(Array.isArray(luzesGuardadas), `${onde} está sem a lista de luzes.`);
+  exigir((LUZES_DO_AMBIENTE as readonly unknown[]).includes(luzAmbiente), `${onde}: a luz do ambiente não é válida.`);
+  exigir((MODOS_DE_VISAO as readonly unknown[]).includes(visao), `${onde}: o modo da visão não é válido.`);
+  const luzes: Record<string, FonteDeLuz> = {};
+  luzesGuardadas.forEach((item, i) => {
+    const luz = lerFonteDeLuz(item, `${onde}: a luz nº ${i + 1}`);
+    exigir(!(luz.id in luzes), `${onde}: a luz "${luz.id}" está repetida.`);
+    luzes[luz.id] = luz;
+  });
   exigir(typeof id === 'string' && id !== '', `${onde} está sem id.`);
   exigir(typeof nome === 'string', `${onde} está sem nome.`);
   exigir(typeof descricao === 'string', `${onde} está sem descrição.`);
@@ -107,6 +141,9 @@ function lerInstancia(dado: unknown, onde: string, versao: number): Instancia {
     tokens,
     movimentoTravado,
     paredes,
+    luzAmbiente: luzAmbiente as LuzDoAmbiente,
+    visao: visao as ModoDeVisao,
+    luzes,
   };
   const problema = problemaNaInstancia(instancia);
   exigir(problema === null, `${onde}: ${problema}`);
@@ -130,6 +167,7 @@ export function instanciasParaObjeto(estado: EstadoInstancias) {
       ...instancia,
       tokens: Object.values(instancia.tokens),
       paredes: Object.values(instancia.paredes),
+      luzes: Object.values(instancia.luzes),
     })),
     cenas: estado.cenas,
     cenaInicial: estado.cenaInicial,
