@@ -16,7 +16,7 @@ import { chaveHex } from './hex';
 import { criarLojaComHistorico, type LojaComHistorico } from './lojaHistorico';
 import type { EstadoMapa } from './mapa';
 import type { OpcoesRegistro } from './registro';
-import { normalizarParede, paredeVistaPeloJogador, problemaNaParede, type EstadoDaPorta, type Parede } from './paredes';
+import { abrirVao, normalizarParede, paredeVistaPeloJogador, problemaNaParede, type EstadoDaPorta, type Parede, type Ponto } from './paredes';
 import {
   conferirInstancias,
   dentroDoMapa,
@@ -163,11 +163,28 @@ export type AcaoInstancias =
       readonly token: TokenNaInstancia;
       readonly levar?: readonly string[];
     }
-  | { readonly tipo: 'MoverToken'; readonly instanciaId: string; readonly tokenId: string; readonly x: number; readonly y: number }
+  /** `caminho`: os pontos onde o movimento mudou de direção ao deslizar nas paredes. */
+  | {
+      readonly tipo: 'MoverToken';
+      readonly instanciaId: string;
+      readonly tokenId: string;
+      readonly x: number;
+      readonly y: number;
+      readonly caminho?: readonly Ponto[];
+    }
   | { readonly tipo: 'EditarToken'; readonly instanciaId: string; readonly tokenId: string; readonly mudancas: MudancasNoToken }
   | { readonly tipo: 'TirarToken'; readonly instanciaId: string; readonly tokenId: string }
   /** Várias paredes de uma vez (uma linha desenhada ponto a ponto), num só passo de desfazer. */
-  | { readonly tipo: 'CriarParedes'; readonly instanciaId: string; readonly paredes: readonly Parede[] }
+  /**
+   * `encaixe` (pixels): portas e janelas desenhadas sobre uma parede, a até essa distância da linha
+   * dela, abrem um vão nela (`abrirVao`).
+   */
+  | {
+      readonly tipo: 'CriarParedes';
+      readonly instanciaId: string;
+      readonly paredes: readonly Parede[];
+      readonly encaixe?: number;
+    }
   /** Troca as paredes informadas (pelo id), como ao arrastar uma ponta que várias compartilham. */
   | { readonly tipo: 'EditarParedes'; readonly instanciaId: string; readonly paredes: readonly Parede[] }
   | { readonly tipo: 'ApagarParedes'; readonly instanciaId: string; readonly paredeIds: readonly string[] }
@@ -415,7 +432,9 @@ export function aplicarAcaoInstancias(estado: EstadoInstancias, acao: AcaoInstan
       if (!instancia || problemaNoToken(acao.token)) {
         return estado;
       }
-      const posto = comTokenPosto(estado, instancia, { ...acao.token, ...dentroDoMapa(instancia, acao.token.x, acao.token.y) });
+      // Um token posto no mapa não traz o caminho de um movimento antigo.
+      const { caminho: _caminho, ...semCaminho } = acao.token;
+      const posto = comTokenPosto(estado, instancia, { ...semCaminho, ...dentroDoMapa(instancia, acao.token.x, acao.token.y) });
       // Quem controla a ficha vai para onde ela está.
       return acao.levar && acao.levar.length > 0
         ? aplicarAcaoInstancias(posto, { tipo: 'LevarParaCena', participanteIds: acao.levar, cena: cenaNaInstancia(instancia.id) })
@@ -428,7 +447,12 @@ export function aplicarAcaoInstancias(estado: EstadoInstancias, acao: AcaoInstan
           return tokens;
         }
         const { x, y } = dentroDoMapa(instancia, acao.x, acao.y);
-        return x === token.x && y === token.y ? tokens : { ...tokens, [token.id]: { ...token, x, y } };
+        if (x === token.x && y === token.y) {
+          return tokens;
+        }
+        const { caminho: _antigo, ...semCaminho } = token;
+        const caminho = (acao.caminho ?? []).filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+        return { ...tokens, [token.id]: caminho.length > 0 ? { ...semCaminho, x, y, caminho } : { ...semCaminho, x, y } };
       });
     case 'EditarToken':
       return comTokens(estado, acao.instanciaId, (tokens) => {
@@ -452,7 +476,16 @@ export function aplicarAcaoInstancias(estado: EstadoInstancias, acao: AcaoInstan
     case 'CriarParedes':
       return comParedes(estado, acao.instanciaId, (paredes) => {
         const novas = acao.paredes.filter((p) => !(p.id in paredes)).map(normalizarParede);
-        return novas.length === 0 ? paredes : { ...paredes, ...Object.fromEntries(novas.map((p) => [p.id, p])) };
+        if (novas.length === 0) {
+          return paredes;
+        }
+        let resultado = paredes;
+        for (const nova of novas) {
+          const { paredes: cortadas, abertura } =
+            acao.encaixe !== undefined && acao.encaixe >= 0 ? abrirVao(resultado, nova, acao.encaixe) : { paredes: resultado, abertura: nova };
+          resultado = { ...cortadas, [abertura.id]: abertura };
+        }
+        return resultado;
       });
     case 'EditarParedes':
       return comParedes(estado, acao.instanciaId, (paredes) => {

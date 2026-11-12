@@ -181,6 +181,116 @@ export function pontoDeParada(origem: Ponto, destino: Ponto, raio: number, pared
   return { x: origem.x + (destino.x - origem.x) * parada, y: origem.y + (destino.y - origem.y) * parada };
 }
 
+/** Quantas paredes o corpo pode tocar ao mesmo tempo num passo (um batente de cada lado, uma quina). */
+const MAXIMO_DE_DESLIZES = 4;
+/** Limite de passos num movimento, para um corpo preso não ficar tentando para sempre. */
+const MAXIMO_DE_PASSOS = 400;
+
+/** Um passo curto com deslize: anda o vetor, e a cada parede tocada fica só o que corre ao longo dela. */
+function passoComDeslize(origem: Ponto, vetor: Ponto, raio: number, bloqueantes: readonly Parede[]): Ponto {
+  let posicao = origem;
+  let restante = vetor;
+  for (let i = 0; i <= MAXIMO_DE_DESLIZES; i++) {
+    const comprimento = Math.hypot(restante.x, restante.y);
+    if (comprimento < 1e-6) {
+      break;
+    }
+    const alvo = { x: posicao.x + restante.x, y: posicao.y + restante.y };
+    const t = primeiroContato(posicao, alvo, raio, bloqueantes);
+    if (t === null) {
+      return alvo;
+    }
+    const contato = { x: posicao.x + restante.x * t, y: posicao.y + restante.y * t };
+    const parada = Math.max(0, t - FOLGA / comprimento);
+    posicao = { x: posicao.x + restante.x * parada, y: posicao.y + restante.y * parada };
+    // A direção de onde a parede empurra: do ponto da parede mais perto até o centro do corpo.
+    let normal: Ponto | null = null;
+    let menor = Infinity;
+    for (const parede of bloqueantes) {
+      const perto = pontoMaisProximo(contato, parede.a, parede.b);
+      const d = Math.hypot(contato.x - perto.x, contato.y - perto.y);
+      if (d < menor && d > 1e-9) {
+        menor = d;
+        normal = { x: (contato.x - perto.x) / d, y: (contato.y - perto.y) / d };
+      }
+    }
+    const sobra = sub(alvo, posicao);
+    const contra = normal ? dot(sobra, normal) : 0;
+    if (!normal || contra >= 0) {
+      break;
+    }
+    restante = { x: sobra.x - normal.x * contra, y: sobra.y - normal.y * contra };
+  }
+  return posicao;
+}
+
+/** Tira os pontos do meio de trechos que seguem na mesma direção. */
+function simplificar(pontos: readonly Ponto[]): Ponto[] {
+  const resultado: Ponto[] = [];
+  for (const ponto of pontos) {
+    const n = resultado.length;
+    if (n >= 2) {
+      const a = resultado[n - 2];
+      const b = resultado[n - 1];
+      const cruz = (b.x - a.x) * (ponto.y - b.y) - (b.y - a.y) * (ponto.x - b.x);
+      const tamanho = Math.hypot(b.x - a.x, b.y - a.y) * Math.hypot(ponto.x - b.x, ponto.y - b.y);
+      if (tamanho > 0 && Math.abs(cruz) / tamanho < 1e-4 && dot(sub(b, a), sub(ponto, b)) > 0) {
+        resultado[n - 1] = ponto;
+        continue;
+      }
+    }
+    resultado.push(ponto);
+  }
+  return resultado;
+}
+
+/**
+ * O movimento com deslize, como nos jogos: o corpo anda em passos curtos, cada um mirando de novo
+ * o destino; ao encostar numa parede, escorrega ao longo dela ou contorna a quina. Assim um arraste
+ * na diagonal entra pela porta em vez de parar no batente. Para quando chega, quando fica preso ou
+ * quando escorregar não aproxima mais do destino. Devolve onde o corpo termina e os pontos onde o
+ * caminho muda de direção, para conferir cada trecho em linha reta.
+ */
+export function deslizar(
+  origem: Ponto,
+  destino: Ponto,
+  raio: number,
+  paredes: readonly Parede[],
+): { readonly final: Ponto; readonly caminho: readonly Ponto[] } {
+  const bloqueantes = paredes.filter(barraMovimento);
+  // Sem nada no caminho, vai direto.
+  if (primeiroContato(origem, destino, raio, bloqueantes) === null) {
+    return { final: destino, caminho: [] };
+  }
+  const tamanhoDoPasso = Math.max(raio / 2, 2);
+  const pontos: Ponto[] = [origem];
+  let posicao = origem;
+  for (let i = 0; i < MAXIMO_DE_PASSOS; i++) {
+    const falta = sub(destino, posicao);
+    const distancia = Math.hypot(falta.x, falta.y);
+    if (distancia < FOLGA) {
+      break;
+    }
+    const escala = Math.min(1, tamanhoDoPasso / distancia);
+    const nova = passoComDeslize(posicao, { x: falta.x * escala, y: falta.y * escala }, raio, bloqueantes);
+    const andou = Math.hypot(nova.x - posicao.x, nova.y - posicao.y);
+    const novaDistancia = Math.hypot(destino.x - nova.x, destino.y - nova.y);
+    // Preso, ou escorregando sem chegar mais perto: para aqui.
+    if (andou < 0.05 || novaDistancia >= distancia - 0.01) {
+      break;
+    }
+    posicao = nova;
+    pontos.push(posicao);
+  }
+  const simples = simplificar(pontos);
+  return { final: posicao, caminho: simples.slice(1, -1) };
+}
+
+/** Se o corpo percorre os trechos em linha reta, de ponto em ponto, sem encostar em nada que barre. */
+export function trechosLivres(pontos: readonly Ponto[], raio: number, paredes: readonly Parede[]): boolean {
+  return pontos.slice(1).every((ponto, i) => caminhoLivre(pontos[i], ponto, raio, paredes));
+}
+
 /** Se o corpo vai de `origem` a `destino` sem encostar em nada que barre o movimento. */
 export function caminhoLivre(origem: Ponto, destino: Ponto, raio: number, paredes: readonly Parede[]): boolean {
   return primeiroContato(origem, destino, raio, paredes.filter(barraMovimento)) === null;
@@ -222,6 +332,65 @@ export function pontaProxima(p: Ponto, paredes: readonly Parede[], alcance: numb
     }
   }
   return melhor;
+}
+
+/** Pedaços de parede menores que isto (em pixels) somem ao cortar o vão. */
+const SOBRA_MINIMA = 1;
+
+/**
+ * Uma porta ou janela desenhada sobre uma parede abre um vão nela: a parede é cortada em volta da
+ * abertura (sobram os pedaços dos lados) e a abertura se encaixa na linha da parede. Sem isso, a
+ * parede continuaria inteira atrás da porta, e abrir a porta não deixaria passar.
+ * `tolerancia` (em pixels) diz o quanto a abertura pode estar fora da linha da parede.
+ * Os pedaços novos ganham o id da parede com o da abertura.
+ */
+export function abrirVao(
+  paredes: Readonly<Record<string, Parede>>,
+  abertura: Parede,
+  tolerancia: number,
+): { readonly paredes: Readonly<Record<string, Parede>>; readonly abertura: Parede } {
+  if (abertura.tipo === 'parede') {
+    return { paredes, abertura };
+  }
+  let resultado: Record<string, Parede> = { ...paredes };
+  let encaixada = abertura;
+  for (const parede of Object.values(paredes)) {
+    if (parede.tipo !== 'parede') {
+      continue;
+    }
+    const s = sub(parede.b, parede.a);
+    const l2 = dot(s, s);
+    // As duas pontas da abertura precisam estar sobre a linha da parede (dentro da tolerância).
+    const distanciaDaLinha = (p: Ponto) => Math.abs((p.x - parede.a.x) * s.y - (p.y - parede.a.y) * s.x) / Math.sqrt(l2);
+    if (distanciaDaLinha(encaixada.a) > tolerancia || distanciaDaLinha(encaixada.b) > tolerancia) {
+      continue;
+    }
+    const u = (p: Ponto) => dot(sub(p, parede.a), s) / l2;
+    const [u1, u2] = [u(encaixada.a), u(encaixada.b)].sort((x, y) => x - y);
+    const inicio = Math.max(0, u1);
+    const fim = Math.min(1, u2);
+    const comprimento = Math.sqrt(l2);
+    if ((fim - inicio) * comprimento < SOBRA_MINIMA) {
+      continue;
+    }
+    const naLinha = (t: number): Ponto => ({ x: parede.a.x + s.x * t, y: parede.a.y + s.y * t });
+    // A abertura passa a ficar exatamente na linha da parede.
+    const projetar = (p: Ponto) => {
+      const t = u(p);
+      return t >= 0 && t <= 1 ? naLinha(t) : p;
+    };
+    encaixada = { ...encaixada, a: projetar(encaixada.a), b: projetar(encaixada.b) };
+    delete resultado[parede.id];
+    if (inicio * comprimento >= SOBRA_MINIMA) {
+      resultado[parede.id] = { ...parede, b: naLinha(inicio) };
+    }
+    if ((1 - fim) * comprimento >= SOBRA_MINIMA) {
+      const id = inicio * comprimento >= SOBRA_MINIMA ? `${parede.id}~${abertura.id}` : parede.id;
+      resultado[id] = { ...parede, id, a: naLinha(fim) };
+    }
+    resultado = { ...resultado };
+  }
+  return { paredes: resultado, abertura: encaixada };
 }
 
 /** Como o jogador recebe as paredes: a porta secreta fechada vira parede comum; aberta, some. */

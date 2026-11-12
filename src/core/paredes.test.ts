@@ -10,20 +10,23 @@ import {
   type EstadoInstancias,
 } from './instancias';
 import {
+  abrirVao,
   alcancaAPorta,
   alinharAngulo,
   barraMovimento,
   barraVisao,
   caminhoLivre,
+  deslizar,
   distanciaAoSegmento,
   novaParede,
   pontaProxima,
   pontoDeParada,
   primeiroContato,
   raioDoCorpo,
+  trechosLivres,
 } from './paredes';
 import { desserializarInstancias, serializarInstancias } from './persistenciaInstancias';
-import { destinoDoMovimento, novoToken, permissaoParaPorta, type ContextoDasInstancias } from './tokens';
+import { movimentoDoToken, novoToken, permissaoParaPorta, type ContextoDasInstancias } from './tokens';
 import { criarFicha } from './fichas';
 
 const aplicar = (estado: EstadoInstancias, ...acoes: AcaoInstancias[]) => acoes.reduce(aplicarAcaoInstancias, estado);
@@ -146,13 +149,39 @@ describe('paredes nas instâncias', () => {
   it('o token para na porta fechada e passa pela aberta; o mestre atravessa com Shift', () => {
     const instancia = base.instancias.cripta;
     const lyra = instancia.tokens['t-lyra'];
-    const parada = destinoDoMovimento(instancia, lyra, { x: 900, y: 500 }, contexto);
-    // Corpo de um Médio: raio de 35 px; para antes de x = 465.
+    const { final: parada } = movimentoDoToken(instancia, lyra, { x: 900, y: 500 }, contexto);
+    // Corpo de um Médio: raio de 35 px; para antes de x = 465 (empurrando reto, não há para onde deslizar).
     expect(parada.x).toBeLessThan(465);
     expect(parada.x).toBeGreaterThan(464);
-    expect(destinoDoMovimento(instancia, lyra, { x: 900, y: 500 }, contexto, true)).toEqual({ x: 900, y: 500 });
+    expect(movimentoDoToken(instancia, lyra, { x: 900, y: 500 }, contexto, true).final).toEqual({ x: 900, y: 500 });
     const aberta = aplicar(base, { tipo: 'MudarPorta', instanciaId: 'cripta', paredeId: 'porta', estado: 'aberta' });
-    expect(destinoDoMovimento(aberta.instancias.cripta, lyra, { x: 900, y: 500 }, contexto)).toEqual({ x: 900, y: 500 });
+    expect(movimentoDoToken(aberta.instancias.cripta, lyra, { x: 900, y: 500 }, contexto).final).toEqual({ x: 900, y: 500 });
+  });
+
+  it('desliza ao longo da parede com o que sobra do movimento', () => {
+    // Indo na diagonal contra a parede vertical em x = 100: escorrega para baixo, sem atravessar.
+    const { final, caminho } = deslizar({ x: 50, y: 50 }, { x: 150, y: 150 }, 10, [muro]);
+    expect(final.x).toBeLessThan(90);
+    // Chega perto da altura do destino (escorregar perto do fim quase não aproxima mais; uns pixels bastam).
+    expect(final.y).toBeGreaterThan(145);
+    expect(caminho.length).toBeGreaterThan(0);
+    expect(trechosLivres([{ x: 50, y: 50 }, ...caminho, final], 10, [muro])).toBe(true);
+  });
+
+  it('um arraste na diagonal entra pela porta aberta, contornando o batente', () => {
+    // Paredes acima e abaixo de uma passagem de 100 px (1,5 m) em x = 300, de y = 450 a 550.
+    const paredes = [
+      novaParede('e', { x: 300, y: 0 }, { x: 300, y: 450 }, 'parede'),
+      novaParede('d', { x: 300, y: 550 }, { x: 300, y: 1000 }, 'parede'),
+    ];
+    const medio = raioDoCorpo(1.5, 0.015);
+    // Em linha reta, a diagonal raspa no batente de cima e para.
+    expect(caminhoLivre({ x: 100, y: 380 }, { x: 500, y: 560 }, medio, paredes)).toBe(false);
+    // Deslizando, passa pela porta e chega do outro lado.
+    const { final, caminho } = deslizar({ x: 100, y: 380 }, { x: 500, y: 560 }, medio, paredes);
+    expect(final.x).toBeGreaterThan(300);
+    expect(caminho.length).toBeGreaterThan(0);
+    expect(trechosLivres([{ x: 100, y: 380 }, ...caminho, final], medio, paredes)).toBe(true);
   });
 
   it('o jogador abre e fecha portas perto de um token dele; trancada e secreta não', () => {
@@ -182,6 +211,15 @@ describe('paredes nas instâncias', () => {
     loja.despachar({ tipo: 'MoverToken', instanciaId: 'cripta', tokenId: 't-lyra', x: 900, y: 500 });
     expect(recusas.at(-1)).toBe('Uma parede está no caminho.');
     expect(loja.obterEstado().instancias.cripta.tokens['t-lyra'].x).toBe(400);
+    // Um caminho inventado que pula a parede também é recusado: cada trecho é conferido.
+    loja.despachar({ tipo: 'MoverToken', instanciaId: 'cripta', tokenId: 't-lyra', x: 900, y: 500, caminho: [{ x: 600, y: 500 }] });
+    expect(loja.obterEstado().instancias.cripta.tokens['t-lyra'].x).toBe(400);
+    // O caminho calculado pelo deslize vale e fica guardado no token.
+    const instancia = loja.obterEstado().instancias.cripta;
+    const { final, caminho } = movimentoDoToken(instancia, instancia.tokens['t-lyra'], { x: 480, y: 900 }, contexto);
+    loja.despachar({ tipo: 'MoverToken', instanciaId: 'cripta', tokenId: 't-lyra', x: final.x, y: final.y, caminho });
+    expect(loja.obterEstado().instancias.cripta.tokens['t-lyra']).toMatchObject({ x: final.x, y: final.y });
+    expect(loja.obterEstado().instancias.cripta.tokens['t-lyra'].caminho).toEqual(caminho.length ? caminho : undefined);
   });
 
   it('o jogador não sabe das portas secretas', () => {
@@ -207,5 +245,40 @@ describe('paredes nas instâncias', () => {
     const ruim = JSON.parse(serializarInstancias(base));
     ruim.instancias[0].paredes[0].tipo = 'muralha';
     expect(desserializarInstancias(JSON.stringify(ruim)).ok).toBe(false);
+  });
+});
+
+describe('porta desenhada sobre uma parede', () => {
+  // Uma parede de x = 0 a 1000 em y = 600; a porta desenhada um pouco fora da linha (y = 597).
+  const parede = novaParede('w', { x: 0, y: 600 }, { x: 1000, y: 600 }, 'parede');
+  const porta = novaParede('p', { x: 400, y: 597 }, { x: 600, y: 597 }, 'porta');
+
+  it('corta a parede em volta da porta e encaixa a porta na linha', () => {
+    const { paredes, abertura } = abrirVao({ w: parede }, porta, 12);
+    expect(abertura.a).toEqual({ x: 400, y: 600 });
+    expect(abertura.b).toEqual({ x: 600, y: 600 });
+    expect(paredes.w).toMatchObject({ a: { x: 0, y: 600 }, b: { x: 400, y: 600 } });
+    expect(paredes['w~p']).toMatchObject({ a: { x: 600, y: 600 }, b: { x: 1000, y: 600 } });
+  });
+
+  it('longe da linha ou numa parede que não passa por ali, nada é cortado', () => {
+    expect(abrirVao({ w: parede }, { ...porta, a: { x: 400, y: 560 }, b: { x: 600, y: 560 } }, 12).paredes).toEqual({ w: parede });
+    const longe = novaParede('p2', { x: 1200, y: 600 }, { x: 1400, y: 600 }, 'porta');
+    expect(abrirVao({ w: parede }, longe, 12).paredes).toEqual({ w: parede });
+  });
+
+  it('na instância, abrir a porta deixa passar', () => {
+    const contexto: ContextoDasInstancias = { obterDonoDaFicha: () => 'mestre', obterFicha: () => undefined };
+    const estado = aplicar(
+      criarInstanciasVazias(),
+      { tipo: 'CriarInstancia', instancia: novaInstancia('sala', 'Sala', null) },
+      { tipo: 'CriarParedes', instanciaId: 'sala', paredes: [parede] },
+      { tipo: 'CriarParedes', instanciaId: 'sala', paredes: [porta], encaixe: 12 },
+      { tipo: 'MudarPorta', instanciaId: 'sala', paredeId: 'p', estado: 'aberta' },
+      { tipo: 'ColocarToken', instanciaId: 'sala', token: novoToken('t', 'f', 500, 400) },
+    );
+    expect(Object.keys(estado.instancias.sala.paredes).sort()).toEqual(['p', 'w', 'w~p']);
+    const sala = estado.instancias.sala;
+    expect(movimentoDoToken(sala, sala.tokens.t, { x: 450, y: 800 }, contexto).final.y).toBeCloseTo(800, 0);
   });
 });

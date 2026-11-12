@@ -18,8 +18,11 @@ export interface EventosDosTokens {
    * `ignorarParedes` é o Shift apertado (vale só para o mestre).
    */
   aoMover(tokenId: string, x: number, y: number, ignorarParedes: boolean): boolean;
-  /** Até onde o token chega indo em linha reta até `destino`, parando nas paredes (decidido no `core/`). */
-  limitar(tokenId: string, destino: PontoMundo, ignorarParedes: boolean): PontoMundo;
+  /**
+   * Até onde o token chega indo até `destino`, deslizando nas paredes (decidido no `core/`),
+   * e os pontos onde o caminho muda de direção.
+   */
+  limitar(tokenId: string, destino: PontoMundo, ignorarParedes: boolean): { final: PontoMundo; caminho: readonly PontoMundo[] };
   /** Clique com o botão direito (sem arrastar), na posição da tela. */
   aoMenu(tokenId: string, clientX: number, clientY: number): void;
   /** Tentou arrastar um token que não pode mover. */
@@ -118,6 +121,8 @@ export function criarCamadaTokens(
     /** Para onde o ponteiro quer levar o token; o token fica onde a parede deixa. */
     pretendido: PontoMundo | null;
     ignorarParedes: boolean;
+    /** Os pontos onde o caminho muda de direção, deslizando nas paredes. */
+    caminho: readonly PontoMundo[];
   } | null = null;
   let cliqueDireito: { id: string; x: number; y: number } | null = null;
 
@@ -223,11 +228,14 @@ export function criarCamadaTokens(
     if (!arraste || !arraste.movendo || !visual) {
       return;
     }
-    const { origem, pretendido } = arraste;
+    const { origem, pretendido, caminho } = arraste;
     const ate = visual.raiz.position;
     const escala = escalaDoTexto();
+    linha.moveTo(origem.x, origem.y);
+    for (const ponto of caminho) {
+      linha.lineTo(ponto.x, ponto.y);
+    }
     linha
-      .moveTo(origem.x, origem.y)
       .lineTo(ate.x, ate.y)
       .stroke({ color: COR_LINHA, width: 3 * escala })
       .circle(origem.x, origem.y, 5 * escala)
@@ -241,7 +249,9 @@ export function criarCamadaTokens(
         .circle(pretendido.x, pretendido.y, 4 * escala)
         .fill(COR_BLOQUEIO);
     }
-    const metros = Math.hypot(ate.x - origem.x, ate.y - origem.y) * metrosPorPixel;
+    // A distância conta o caminho inteiro, com os desvios.
+    const pontos = [origem, ...caminho, { x: ate.x, y: ate.y }];
+    const metros = pontos.slice(1).reduce((soma, p, i) => soma + Math.hypot(p.x - pontos[i].x, p.y - pontos[i].y), 0) * metrosPorPixel;
     const deslocamento = visual.dados.deslocamento;
     rotuloLinha.text = formatarMetros(metros) + (deslocamento !== null ? ` · deslocamento ${formatarMetros(deslocamento)}` : '');
     rotuloLinha.scale.set(escala);
@@ -274,6 +284,7 @@ export function criarCamadaTokens(
         movendo: false,
         pretendido: null,
         ignorarParedes: false,
+        caminho: [],
       };
       // Fica por cima dos outros enquanto é arrastado.
       camadaTokens.addChild(raiz);
@@ -335,8 +346,9 @@ export function criarCamadaTokens(
       arraste.pretendido = pretendido;
       arraste.ignorarParedes = evento.shiftKey;
       // As paredes valem a partir de onde o token estava, em linha reta.
-      const limite = eventos()?.limitar(arraste.id, pretendido, evento.shiftKey) ?? pretendido;
-      visual.raiz.position.set(limite.x, limite.y);
+      const limite = eventos()?.limitar(arraste.id, pretendido, evento.shiftKey) ?? { final: pretendido, caminho: [] };
+      arraste.caminho = limite.caminho;
+      visual.raiz.position.set(limite.final.x, limite.final.y);
       desenharLinha(visual);
     }
   };

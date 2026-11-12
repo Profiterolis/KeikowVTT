@@ -39,7 +39,7 @@ import { novaParede, type Parede, type Ponto } from '../core/paredes';
 import type { EventosDasParedes, ModoParedes } from '../render/camadaParedes';
 import {
   dentroDoMapa,
-  destinoDoMovimento,
+  movimentoDoToken,
   nomeNumerado,
   permissaoParaPorta,
   novoToken,
@@ -547,10 +547,10 @@ function Editor({
         const instancia = lojaInstancias.obterEstado().instancias[instanciaVistaId];
         const token = instancia?.tokens[tokenId];
         if (!instancia || !token) {
-          return destino;
+          return { final: destino, caminho: [] };
         }
         // Só o mestre atravessa paredes, segurando Shift.
-        return destinoDoMovimento(instancia, token, destino, contextoInstancias, ignorarParedes && ehMestre(sessao.autorId));
+        return movimentoDoToken(instancia, token, destino, contextoInstancias, ignorarParedes && ehMestre(sessao.autorId));
       },
       aoMover(tokenId, x, y, ignorarParedes) {
         const antes = lojaInstancias.obterEstado().instancias[instanciaVistaId];
@@ -558,8 +558,10 @@ function Editor({
         if (!antes || !token) {
           return false;
         }
-        const alvo = destinoDoMovimento(antes, token, { x, y }, contextoInstancias, ignorarParedes && ehMestre(sessao.autorId));
-        lojaInstancias.despachar({ tipo: 'MoverToken', instanciaId: instanciaVistaId, tokenId, x: alvo.x, y: alvo.y });
+        // O ponto solto já é o fim do deslize; refazer a conta a partir dele acharia o mesmo caminho.
+        const pretendido = { x, y };
+        const { final: alvo, caminho } = movimentoDoToken(antes, token, pretendido, contextoInstancias, ignorarParedes && ehMestre(sessao.autorId));
+        lojaInstancias.despachar({ tipo: 'MoverToken', instanciaId: instanciaVistaId, tokenId, x: alvo.x, y: alvo.y, caminho });
         const depois = lojaInstancias.obterEstado().instancias[instanciaVistaId]?.tokens[tokenId];
         const noMapa = dentroDoMapa(antes, alvo.x, alvo.y);
         return depois !== undefined && depois.x === noMapa.x && depois.y === noMapa.y;
@@ -642,11 +644,11 @@ function Editor({
       return null;
     }
     return {
-      aoCriar(pontos, tipo, secreta) {
+      aoCriar(pontos, tipo, secreta, encaixe) {
         const paredes = pontos
           .slice(1)
           .map((ponto, i) => novaParede(crypto.randomUUID(), pontos[i], ponto, tipo, secreta));
-        lojaInstancias.despachar({ tipo: 'CriarParedes', instanciaId: instanciaVistaId, paredes });
+        lojaInstancias.despachar({ tipo: 'CriarParedes', instanciaId: instanciaVistaId, paredes, encaixe });
       },
       aoSelecionar: setParedeSelecionada,
       aoMoverPonta(de: Ponto, para: Ponto) {

@@ -11,7 +11,7 @@ import { TAMANHOS } from './entradas';
 import { entradaDaFicha, type Ficha } from './fichas';
 import type { EstadoInstancias, Instancia } from './instancias';
 import { imagemDoToken } from './imagens';
-import { alcancaAPorta, caminhoLivre, pontoDeParada, raioDoCorpo, type Ponto } from './paredes';
+import { alcancaAPorta, deslizar, raioDoCorpo, trechosLivres, type Ponto } from './paredes';
 import { PERMITIDO, type Permissao } from './permissoes';
 import type { Regras } from './regras';
 import { ehMestre } from './visibilidade';
@@ -32,6 +32,11 @@ export interface TokenNaInstancia {
   readonly travado: boolean;
   /** O nome que aparece no mapa, como "Figura encapuzada"; vazio usa o nome da ficha. */
   readonly nomeNoMapa: string;
+  /**
+   * Os pontos onde o último movimento mudou de direção (deslizando numa parede). Serve para
+   * conferir que o caminho não atravessou paredes; na Fase 8, para animar a caminhada.
+   */
+  readonly caminho?: readonly Ponto[];
 }
 
 export type MudancasNoToken = Partial<Pick<TokenNaInstancia, 'tamanho' | 'escondido' | 'travado' | 'nomeNoMapa'>>;
@@ -141,21 +146,23 @@ export function raioDoCorpoDoToken(token: TokenNaInstancia, instancia: Instancia
 }
 
 /**
- * Até onde o token chega indo em linha reta até `destino`: para logo antes da primeira parede,
- * porta fechada ou janela, e nunca sai do mapa. `ignorarParedes` (só o mestre, com Shift) passa por tudo.
+ * Até onde o token chega indo até `destino`: anda em linha reta, desliza nas paredes, portas
+ * fechadas e janelas que encontrar, e nunca sai do mapa. `ignorarParedes` (só o mestre, com Shift)
+ * passa por tudo. `caminho` são os pontos onde ele mudou de direção.
  */
-export function destinoDoMovimento(
+export function movimentoDoToken(
   instancia: Instancia,
   token: TokenNaInstancia,
   destino: Ponto,
   contexto: ContextoDasInstancias,
   ignorarParedes = false,
-): Ponto {
+): { readonly final: Ponto; readonly caminho: readonly Ponto[] } {
   const alvo = dentroDoMapa(instancia, destino.x, destino.y);
   if (ignorarParedes) {
-    return alvo;
+    return { final: alvo, caminho: [] };
   }
-  return pontoDeParada(token, alvo, raioDoCorpoDoToken(token, instancia, contexto), Object.values(instancia.paredes));
+  const { final, caminho } = deslizar(token, alvo, raioDoCorpoDoToken(token, instancia, contexto), Object.values(instancia.paredes));
+  return { final: dentroDoMapa(instancia, final.x, final.y), caminho };
 }
 
 /**
@@ -293,15 +300,16 @@ export function conferirInstancias(
       if (igual(tokenAntes, tokenDepois)) {
         continue;
       }
-      if (!igual({ ...tokenAntes, x: 0, y: 0 }, { ...tokenDepois, x: 0, y: 0 })) {
+      if (!igual({ ...tokenAntes, x: 0, y: 0, caminho: [] }, { ...tokenDepois, x: 0, y: 0, caminho: [] })) {
         return recusa('Só o mestre muda os tokens; você só move os seus.');
       }
       const permissao = permissaoParaMover(antes, id, tokenId, autorId, contexto);
       if (!permissao.ok) {
         return permissao;
       }
-      // O corpo do token não atravessa paredes, portas fechadas nem janelas.
-      if (!caminhoLivre(tokenAntes, tokenDepois, raioDoCorpoDoToken(tokenAntes, a, contexto), Object.values(a.paredes))) {
+      // O corpo do token não atravessa paredes, portas fechadas nem janelas: cada trecho do caminho é conferido.
+      const pontos = [tokenAntes, ...(tokenDepois.caminho ?? []), tokenDepois];
+      if (!trechosLivres(pontos, raioDoCorpoDoToken(tokenAntes, a, contexto), Object.values(a.paredes))) {
         return recusa('Uma parede está no caminho.');
       }
     }

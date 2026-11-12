@@ -15,7 +15,8 @@ export type ModoParedes =
 
 export interface EventosDasParedes {
   /** Uma linha desenhada ponto a ponto (pelo menos dois pontos). */
-  aoCriar(pontos: readonly Ponto[], tipo: TipoDeParede, secreta: boolean): void;
+  /** `encaixe`: a distância (em pixels da instância) em que uma porta ou janela abre vão numa parede. */
+  aoCriar(pontos: readonly Ponto[], tipo: TipoDeParede, secreta: boolean, encaixe: number): void;
   aoSelecionar(paredeId: string | null): void;
   /** Uma ponta arrastada: todas as paredes com uma ponta em `de` passam a ter a ponta em `para`. */
   aoMoverPonta(de: Ponto, para: Ponto): void;
@@ -243,7 +244,7 @@ export function criarCamadaParedes(
       eventos()?.aoMudarDesenho(false);
     }
     if (modo?.tipo === 'desenhar' && pontos.length >= 2) {
-      eventos()?.aoCriar(pontos, modo.tipoDeParede, modo.secreta);
+      eventos()?.aoCriar(pontos, modo.tipoDeParede, modo.secreta, ALCANCE_DA_PONTA * escala());
     }
   };
 

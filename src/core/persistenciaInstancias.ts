@@ -34,7 +34,13 @@ function lerToken(dado: unknown, onde: string): TokenNaInstancia {
   exigir(tamanho === null || typeof tamanho === 'number', `${onde}: o tamanho não é válido.`);
   exigir(typeof escondido === 'boolean' && typeof travado === 'boolean', `${onde}: as travas não são válidas.`);
   exigir(typeof nomeNoMapa === 'string', `${onde} está sem o nome no mapa.`);
-  return { id, fichaId, x, y, tamanho, escondido, travado, nomeNoMapa };
+  // Opcional, sem mudar a versão: os pontos do último movimento.
+  if (dado.caminho === undefined) {
+    return { id, fichaId, x, y, tamanho, escondido, travado, nomeNoMapa };
+  }
+  exigir(Array.isArray(dado.caminho), `${onde}: o caminho não é válido.`);
+  const caminho = dado.caminho.map((p) => lerPonto(p, onde));
+  return { id, fichaId, x, y, tamanho, escondido, travado, nomeNoMapa, caminho };
 }
 
 function lerPonto(dado: unknown, onde: string): Ponto {
