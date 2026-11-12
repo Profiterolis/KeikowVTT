@@ -7,14 +7,16 @@ import { ehIdDeImagem } from './imagens';
 import { CENA_MAPA, problemaNaInstancia, type Cena, type EstadoInstancias, type Instancia } from './instancias';
 import { ehObjeto, exigir } from './leitura';
 import type { TokenNaInstancia } from './tokens';
+import { ESTADOS_DA_PORTA, TIPOS_DE_PAREDE, type Parede, type Ponto } from './paredes';
 import type { ResultadoDe } from './persistencia';
 import { comoResultado, lerJson } from './persistenciaCompendio';
 
 /**
  * Aumente ao mudar o formato, com a conversão da versão anterior e um teste.
  * A 2 trouxe os tokens e a trava do movimento; a 1 abre sem tokens e destravada.
+ * A 3 trouxe as paredes, portas e janelas; as anteriores abrem sem paredes.
  */
-export const VERSAO_INSTANCIAS = 2;
+export const VERSAO_INSTANCIAS = 3;
 
 function lerCoordOuNada(dado: unknown, onde: string): CoordHex | null {
   if (dado === null) {
@@ -35,6 +37,28 @@ function lerToken(dado: unknown, onde: string): TokenNaInstancia {
   return { id, fichaId, x, y, tamanho, escondido, travado, nomeNoMapa };
 }
 
+function lerPonto(dado: unknown, onde: string): Ponto {
+  exigir(ehObjeto(dado) && typeof dado.x === 'number' && typeof dado.y === 'number', `${onde}: uma ponta não é válida.`);
+  return { x: dado.x as number, y: dado.y as number };
+}
+
+function lerParede(dado: unknown, onde: string): Parede {
+  exigir(ehObjeto(dado), `${onde} não é válida.`);
+  const { id, tipo, estado, secreta } = dado;
+  exigir(typeof id === 'string', `${onde} está sem id.`);
+  exigir((TIPOS_DE_PAREDE as readonly unknown[]).includes(tipo), `${onde}: o tipo não é válido.`);
+  exigir((ESTADOS_DA_PORTA as readonly unknown[]).includes(estado), `${onde}: o estado da porta não é válido.`);
+  exigir(typeof secreta === 'boolean', `${onde}: o segredo da porta não é válido.`);
+  return {
+    id,
+    a: lerPonto(dado.a, onde),
+    b: lerPonto(dado.b, onde),
+    tipo: tipo as Parede['tipo'],
+    estado: estado as Parede['estado'],
+    secreta,
+  };
+}
+
 function lerInstancia(dado: unknown, onde: string, versao: number): Instancia {
   exigir(ehObjeto(dado), `${onde} não é válida.`);
   const { id, nome, descricao, hex, imagem, largura, altura, metrosPorPixel } = dado;
@@ -48,6 +72,15 @@ function lerInstancia(dado: unknown, onde: string, versao: number): Instancia {
     const token = lerToken(item, `${onde}: o token nº ${i + 1}`);
     exigir(!(token.id in tokens), `${onde}: o token "${token.id}" está repetido.`);
     tokens[token.id] = token;
+  });
+  // Antes da versão 3, não havia paredes.
+  const paredesGuardadas = versao >= 3 ? dado.paredes : [];
+  exigir(Array.isArray(paredesGuardadas), `${onde} está sem a lista de paredes.`);
+  const paredes: Record<string, Parede> = {};
+  paredesGuardadas.forEach((item, i) => {
+    const parede = lerParede(item, `${onde}: a parede nº ${i + 1}`);
+    exigir(!(parede.id in paredes), `${onde}: a parede "${parede.id}" está repetida.`);
+    paredes[parede.id] = parede;
   });
   exigir(typeof id === 'string' && id !== '', `${onde} está sem id.`);
   exigir(typeof nome === 'string', `${onde} está sem nome.`);
@@ -67,6 +100,7 @@ function lerInstancia(dado: unknown, onde: string, versao: number): Instancia {
     metrosPorPixel,
     tokens,
     movimentoTravado,
+    paredes,
   };
   const problema = problemaNaInstancia(instancia);
   exigir(problema === null, `${onde}: ${problema}`);
@@ -86,7 +120,11 @@ function lerCena(dado: unknown, onde: string, instancias: Readonly<Record<string
 export function instanciasParaObjeto(estado: EstadoInstancias) {
   return {
     versao: VERSAO_INSTANCIAS,
-    instancias: Object.values(estado.instancias).map((instancia) => ({ ...instancia, tokens: Object.values(instancia.tokens) })),
+    instancias: Object.values(estado.instancias).map((instancia) => ({
+      ...instancia,
+      tokens: Object.values(instancia.tokens),
+      paredes: Object.values(instancia.paredes),
+    })),
     cenas: estado.cenas,
     cenaInicial: estado.cenaInicial,
   };

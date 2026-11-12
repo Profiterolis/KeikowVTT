@@ -34,9 +34,14 @@ import { JanelaFicha } from './JanelaFicha';
 import { JanelaToken } from './JanelaToken';
 import { MenuDeContexto, type ItemDoMenu, type MenuAberto } from './MenuDeContexto';
 import type { DestinoIrAte } from './MenuIrAte';
+import { BarraDeParedes } from './BarraDeParedes';
+import { novaParede, type Parede, type Ponto } from '../core/paredes';
+import type { EventosDasParedes, ModoParedes } from '../render/camadaParedes';
 import {
   dentroDoMapa,
+  destinoDoMovimento,
   nomeNumerado,
+  permissaoParaPorta,
   novoToken,
   permissaoParaMover,
   tokenDaFicha,
@@ -214,6 +219,7 @@ async function iniciarEditor(): Promise<EditorCarregado> {
   // Um jogador move só os tokens das fichas que controla.
   const contextoInstancias: ContextoDasInstancias = {
     obterDonoDaFicha: (fichaId) => lojaFichas.obterEstado().fichas[fichaId]?.donoId ?? null,
+    obterFicha: (fichaId) => lojaFichas.obterEstado().fichas[fichaId],
   };
   const lojaInstancias = criarLojaInstancias(
     salvasInstancias?.ok ? salvasInstancias.estado : undefined,
@@ -393,6 +399,12 @@ function Editor({
   const [menuDoToken, setMenuDoToken] = useState<MenuAberto | null>(null);
   /** O token cujo nome no mapa e tamanho o mestre está mudando. */
   const [tokenEmConfiguracao, setTokenEmConfiguracao] = useState<string | null>(null);
+  /** A ferramenta de paredes do mestre (`null` = jogando: tokens e portas respondem). */
+  const [modoParedes, setModoParedes] = useState<ModoParedes>(null);
+  const [paredeSelecionada, setParedeSelecionada] = useState<string | null>(null);
+  /** Há uma linha de paredes sendo desenhada: o Esc a termina antes de sair da ferramenta. */
+  const [desenhandoParede, setDesenhandoParede] = useState(false);
+  const [pedidoDeTermino, setPedidoDeTermino] = useState(0);
   /** O "Ir até" numa instância: o ponto para a câmera ir. */
   const [focoNaInstancia, setFocoNaInstancia] = useState<{
     readonly instanciaId: string;
@@ -439,6 +451,9 @@ function Editor({
     setReguaLigada(false);
     setMenuDoToken(null);
     setTokenEmConfiguracao(null);
+    setModoParedes(null);
+    setParedeSelecionada(null);
+    setDesenhandoParede(false);
     if (!naInstancia) {
       setFichaAberta(null);
     }
@@ -528,15 +543,26 @@ function Editor({
       return null;
     }
     return {
-      aoMover(tokenId, x, y) {
+      limitar(tokenId, destino, ignorarParedes) {
+        const instancia = lojaInstancias.obterEstado().instancias[instanciaVistaId];
+        const token = instancia?.tokens[tokenId];
+        if (!instancia || !token) {
+          return destino;
+        }
+        // Só o mestre atravessa paredes, segurando Shift.
+        return destinoDoMovimento(instancia, token, destino, contextoInstancias, ignorarParedes && ehMestre(sessao.autorId));
+      },
+      aoMover(tokenId, x, y, ignorarParedes) {
         const antes = lojaInstancias.obterEstado().instancias[instanciaVistaId];
-        if (!antes) {
+        const token = antes?.tokens[tokenId];
+        if (!antes || !token) {
           return false;
         }
-        lojaInstancias.despachar({ tipo: 'MoverToken', instanciaId: instanciaVistaId, tokenId, x, y });
+        const alvo = destinoDoMovimento(antes, token, { x, y }, contextoInstancias, ignorarParedes && ehMestre(sessao.autorId));
+        lojaInstancias.despachar({ tipo: 'MoverToken', instanciaId: instanciaVistaId, tokenId, x: alvo.x, y: alvo.y });
         const depois = lojaInstancias.obterEstado().instancias[instanciaVistaId]?.tokens[tokenId];
-        const alvo = dentroDoMapa(antes, x, y);
-        return depois !== undefined && depois.x === alvo.x && depois.y === alvo.y;
+        const noMapa = dentroDoMapa(antes, alvo.x, alvo.y);
+        return depois !== undefined && depois.x === noMapa.x && depois.y === noMapa.y;
       },
       aoMenu: abrirMenuDoToken,
       aoRecusar(tokenId) {
@@ -547,6 +573,96 @@ function Editor({
       },
     };
   }, [instanciaVistaId, lojaInstancias, abrirMenuDoToken, sessao, contextoInstancias]);
+
+  /** Abre ou fecha uma porta (clique no ícone): o jogador perto dela; o mestre, de qualquer lugar. */
+  const clicarPorta = useCallback(
+    (paredeId: string) => {
+      if (!instanciaVistaId) {
+        return;
+      }
+      const estado = lojaInstancias.obterEstado();
+      const porta = estado.instancias[instanciaVistaId]?.paredes[paredeId];
+      if (!porta || porta.tipo !== 'porta') {
+        return;
+      }
+      const permissao = permissaoParaPorta(estado, instanciaVistaId, paredeId, sessao.autorId, contextoInstancias);
+      if (!permissao.ok) {
+        setMensagem({ tipo: 'aviso', texto: permissao.motivo });
+        return;
+      }
+      if (porta.estado === 'trancada') {
+        setMensagem({ tipo: 'aviso', texto: 'Trancada: use o botão direito na porta para destrancar.' });
+        return;
+      }
+      lojaInstancias.despachar({
+        tipo: 'MudarPorta',
+        instanciaId: instanciaVistaId,
+        paredeId,
+        estado: porta.estado === 'aberta' ? 'fechada' : 'aberta',
+      });
+    },
+    [instanciaVistaId, lojaInstancias, sessao, contextoInstancias],
+  );
+
+  /** O menu do botão direito numa porta, só do mestre. */
+  const abrirMenuDaPorta = useCallback(
+    (paredeId: string, x: number, y: number) => {
+      if (!instanciaVistaId || !ehMestre(sessao.autorId)) {
+        return;
+      }
+      const porta = lojaInstancias.obterEstado().instancias[instanciaVistaId]?.paredes[paredeId];
+      if (!porta || porta.tipo !== 'porta') {
+        return;
+      }
+      const mudar = (mudanca: { estado?: Parede['estado']; secreta?: boolean }) =>
+        lojaInstancias.despachar({ tipo: 'MudarPorta', instanciaId: instanciaVistaId, paredeId, ...mudanca });
+      const itens: ItemDoMenu[] = [
+        porta.estado === 'aberta'
+          ? { rotulo: 'Fechar', aoEscolher: () => mudar({ estado: 'fechada' }) }
+          : { rotulo: 'Abrir', aoEscolher: () => mudar({ estado: 'aberta' }) },
+        porta.estado === 'trancada'
+          ? { rotulo: '🔓 Destrancar', aoEscolher: () => mudar({ estado: 'fechada' }) }
+          : { rotulo: '🔒 Trancar', dica: 'Fecha e tranca: só o mestre abre.', aoEscolher: () => mudar({ estado: 'trancada' }) },
+        porta.secreta
+          ? { rotulo: '👁️ Revelar aos jogadores', separar: true, aoEscolher: () => mudar({ secreta: false }) }
+          : { rotulo: '❔ Tornar secreta', separar: true, dica: 'Para os jogadores, vira parede comum.', aoEscolher: () => mudar({ secreta: true }) },
+        {
+          rotulo: 'Apagar a porta',
+          separar: true,
+          aoEscolher: () => lojaInstancias.despachar({ tipo: 'ApagarParedes', instanciaId: instanciaVistaId, paredeIds: [paredeId] }),
+        },
+      ];
+      setMenuDoToken({ x, y, titulo: porta.secreta ? 'Porta secreta' : 'Porta', itens });
+    },
+    [instanciaVistaId, lojaInstancias, sessao],
+  );
+
+  const eventosDasParedes = useMemo<EventosDasParedes | null>(() => {
+    if (!instanciaVistaId) {
+      return null;
+    }
+    return {
+      aoCriar(pontos, tipo, secreta) {
+        const paredes = pontos
+          .slice(1)
+          .map((ponto, i) => novaParede(crypto.randomUUID(), pontos[i], ponto, tipo, secreta));
+        lojaInstancias.despachar({ tipo: 'CriarParedes', instanciaId: instanciaVistaId, paredes });
+      },
+      aoSelecionar: setParedeSelecionada,
+      aoMoverPonta(de: Ponto, para: Ponto) {
+        const mesmo = (p: Ponto) => Math.abs(p.x - de.x) < 1e-6 && Math.abs(p.y - de.y) < 1e-6;
+        const paredes = Object.values(lojaInstancias.obterEstado().instancias[instanciaVistaId]?.paredes ?? {})
+          .filter((p) => mesmo(p.a) || mesmo(p.b))
+          .map((p) => ({ ...p, a: mesmo(p.a) ? para : p.a, b: mesmo(p.b) ? para : p.b }));
+        lojaInstancias.despachar({ tipo: 'EditarParedes', instanciaId: instanciaVistaId, paredes });
+      },
+      aoClicarPorta: clicarPorta,
+      aoMenuPorta: abrirMenuDaPorta,
+      aoMudarDesenho: setDesenhandoParede,
+    };
+  }, [instanciaVistaId, lojaInstancias, clicarPorta, abrirMenuDaPorta]);
+
+  const paredesDaVista = useMemo(() => (instanciaVista ? Object.values(instanciaVista.paredes) : []), [instanciaVista]);
 
   /** O mestre soltou no mapa uma ficha ou um monstro do compêndio, vindos da gaveta de tokens. */
   const soltarToken = useCallback(
@@ -965,6 +1081,25 @@ function Editor({
         }
         return;
       }
+      if (naInstancia && modoParedes && !modoJogador) {
+        // Com a ferramenta de paredes: Esc termina a linha, depois desmarca, depois sai da ferramenta.
+        if (evento.key === 'Escape') {
+          if (desenhandoParede) {
+            setPedidoDeTermino((n) => n + 1);
+          } else if (paredeSelecionada) {
+            setParedeSelecionada(null);
+          } else {
+            setModoParedes(null);
+          }
+          return;
+        }
+        if ((evento.key === 'Delete' || evento.key === 'Backspace') && paredeSelecionada && instanciaVista) {
+          evento.preventDefault();
+          lojaInstancias.despachar({ tipo: 'ApagarParedes', instanciaId: instanciaVista.id, paredeIds: [paredeSelecionada] });
+          setParedeSelecionada(null);
+          return;
+        }
+      }
       if (naInstancia && evento.key === 'Escape' && (reguaLigada || fichaAberta)) {
         // A régua e a ficha aberta fecham primeiro, para o mestre e para o jogador.
         if (reguaLigada) {
@@ -1041,6 +1176,10 @@ function Editor({
     lojaInstancias,
     reguaLigada,
     fichaAberta,
+    modoParedes,
+    desenhandoParede,
+    paredeSelecionada,
+    instanciaVista,
   ]);
 
   const pontoDoEvento = (evento: DragEvent<HTMLElement>): PontoMundo | null => {
@@ -1295,6 +1434,12 @@ function Editor({
             eventos={eventosDosTokens}
             aoSoltar={modoJogador ? null : soltarToken}
             foco={focoNaInstancia?.instanciaId === instanciaVista.id ? focoNaInstancia : null}
+            paredes={paredesDaVista}
+            verLinhas={!modoJogador}
+            modoParedes={modoJogador ? null : modoParedes}
+            paredeSelecionada={paredeSelecionada}
+            eventosParedes={eventosDasParedes}
+            pedidoDeTermino={pedidoDeTermino}
           />
         )}
         {passoSobMouse && !naInstancia && <ExplicacaoDoPasso passo={passoSobMouse} />}
@@ -1336,8 +1481,34 @@ function Editor({
               destinosIrAte={destinosIrAte}
               aoAlternarRegua={() => {
                 setMedindo(false);
+                setModoParedes(null);
                 setReguaLigada(!reguaLigada);
               }}
+              editandoParedes={modoParedes !== null}
+              aoAlternarParedes={() => {
+                setReguaLigada(false);
+                setMedindo(false);
+                setParedeSelecionada(null);
+                setModoParedes(modoParedes ? null : { tipo: 'desenhar', tipoDeParede: 'parede', secreta: false });
+              }}
+              barraDeParedes={
+                modoParedes && !modoJogador ? (
+                  <BarraDeParedes
+                    modo={modoParedes}
+                    aoMudarModo={setModoParedes}
+                    selecionada={(paredeSelecionada && instanciaVista.paredes[paredeSelecionada]) || null}
+                    aoEditar={(parede) =>
+                      lojaInstancias.despachar({ tipo: 'EditarParedes', instanciaId: instanciaVista.id, paredes: [parede] })
+                    }
+                    aoApagar={() => {
+                      if (paredeSelecionada) {
+                        lojaInstancias.despachar({ tipo: 'ApagarParedes', instanciaId: instanciaVista.id, paredeIds: [paredeSelecionada] });
+                        setParedeSelecionada(null);
+                      }
+                    }}
+                  />
+                ) : null
+              }
               aoIrAoMapa={modoJogador ? () => setEspiandoMapa(true) : voltarAoMapa}
             />
           )}

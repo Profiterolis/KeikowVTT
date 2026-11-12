@@ -13,8 +13,13 @@ import { corDoMembro, type CarregarImagem } from './camadaGrupo';
 export type TokenParaDesenhar = TokenVisto;
 
 export interface EventosDosTokens {
-  /** Soltou o token num lugar novo. Devolve se o movimento valeu; se não, o token volta. */
-  aoMover(tokenId: string, x: number, y: number): boolean;
+  /**
+   * Soltou o token num lugar novo. Devolve se o movimento valeu; se não, o token volta.
+   * `ignorarParedes` é o Shift apertado (vale só para o mestre).
+   */
+  aoMover(tokenId: string, x: number, y: number, ignorarParedes: boolean): boolean;
+  /** Até onde o token chega indo em linha reta até `destino`, parando nas paredes (decidido no `core/`). */
+  limitar(tokenId: string, destino: PontoMundo, ignorarParedes: boolean): PontoMundo;
   /** Clique com o botão direito (sem arrastar), na posição da tela. */
   aoMenu(tokenId: string, clientX: number, clientY: number): void;
   /** Tentou arrastar um token que não pode mover. */
@@ -28,6 +33,7 @@ export const COR_POR_TIPO: Readonly<Record<TokenParaDesenhar['tipo'], number>> =
 };
 const COR_SELECAO = 0xffffff;
 const COR_LINHA = 0xffc857;
+const COR_BLOQUEIO = 0xe05c5c;
 const DURACAO_DESLIZE_MS = 250;
 /** Abaixo disto (em pixels da tela), o arraste conta como clique. */
 const TOLERANCIA_CLIQUE = 4;
@@ -109,6 +115,9 @@ export function criarCamadaTokens(
     desvio: PontoMundo;
     inicioNaTela: PontoMundo;
     movendo: boolean;
+    /** Para onde o ponteiro quer levar o token; o token fica onde a parede deixa. */
+    pretendido: PontoMundo | null;
+    ignorarParedes: boolean;
   } | null = null;
   let cliqueDireito: { id: string; x: number; y: number } | null = null;
 
@@ -214,7 +223,7 @@ export function criarCamadaTokens(
     if (!arraste || !arraste.movendo || !visual) {
       return;
     }
-    const { origem } = arraste;
+    const { origem, pretendido } = arraste;
     const ate = visual.raiz.position;
     const escala = escalaDoTexto();
     linha
@@ -223,6 +232,15 @@ export function criarCamadaTokens(
       .stroke({ color: COR_LINHA, width: 3 * escala })
       .circle(origem.x, origem.y, 5 * escala)
       .fill(COR_LINHA);
+    // Uma parede no caminho: o resto da linha fica vermelho, até onde o ponteiro está.
+    if (pretendido && Math.hypot(pretendido.x - ate.x, pretendido.y - ate.y) > 1) {
+      linha
+        .moveTo(ate.x, ate.y)
+        .lineTo(pretendido.x, pretendido.y)
+        .stroke({ color: COR_BLOQUEIO, width: 2 * escala, alpha: 0.8 })
+        .circle(pretendido.x, pretendido.y, 4 * escala)
+        .fill(COR_BLOQUEIO);
+    }
     const metros = Math.hypot(ate.x - origem.x, ate.y - origem.y) * metrosPorPixel;
     const deslocamento = visual.dados.deslocamento;
     rotuloLinha.text = formatarMetros(metros) + (deslocamento !== null ? ` · deslocamento ${formatarMetros(deslocamento)}` : '');
@@ -254,6 +272,8 @@ export function criarCamadaTokens(
         desvio: { x: ponto.x - raiz.x, y: ponto.y - raiz.y },
         inicioNaTela: { x: evento.clientX, y: evento.clientY },
         movendo: false,
+        pretendido: null,
+        ignorarParedes: false,
       };
       // Fica por cima dos outros enquanto é arrastado.
       camadaTokens.addChild(raiz);
@@ -311,7 +331,12 @@ export function criarCamadaTokens(
     }
     if (arraste.movendo) {
       const ponto = mundoDaTela(evento.clientX, evento.clientY);
-      visual.raiz.position.set(ponto.x - arraste.desvio.x, ponto.y - arraste.desvio.y);
+      const pretendido = { x: ponto.x - arraste.desvio.x, y: ponto.y - arraste.desvio.y };
+      arraste.pretendido = pretendido;
+      arraste.ignorarParedes = evento.shiftKey;
+      // As paredes valem a partir de onde o token estava, em linha reta.
+      const limite = eventos()?.limitar(arraste.id, pretendido, evento.shiftKey) ?? pretendido;
+      visual.raiz.position.set(limite.x, limite.y);
       desenharLinha(visual);
     }
   };
@@ -333,7 +358,7 @@ export function criarCamadaTokens(
       redesenharSelecoes();
       return;
     }
-    const valeu = eventos()?.aoMover(atual.id, visual.raiz.x, visual.raiz.y) ?? false;
+    const valeu = eventos()?.aoMover(atual.id, visual.raiz.x, visual.raiz.y, atual.ignorarParedes) ?? false;
     if (!valeu) {
       // Recusado: volta deslizando para onde estava.
       visual.deslize = { de: { x: visual.raiz.x, y: visual.raiz.y }, para: atual.origem, inicio: performance.now() };

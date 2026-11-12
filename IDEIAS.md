@@ -58,6 +58,8 @@ Ideias aleatórias para o KeikowVTT:
 - Cena inicial: ao preparar a campanha ou a sessão, o mestre escolhe onde os jogadores começam (uma instância ou o mapa-mundi). (Fase 6, passo 3.)
 - Regiões no mapa-mundi: selecionar uma área com vários hexes para virar uma região com regras próprias, anotações e tags, como um país ou reino, ou uma floresta específica. Muita coisa pode vir daí no futuro (por exemplo, o sorteio do que o grupo encontra ao entrar num hex, que já depende da região). Liga com as regiões das instâncias (Fase 6, passo 9) e com o region ID.
 - Planejador de aventura (ou de sessão): um lugar onde o mestre junta tudo o que pretende usar numa sessão da campanha, arrastando instâncias, NPCs, itens, notas e o que mais for preciso, para ter tudo à mão na hora do jogo. Liga com as instâncias (Fase 6), as fichas e o compêndio.
+- Modo de batalha nas instâncias: fora do combate, o movimento é livre pela instância inteira; quando os jogadores entram em combate, as regras mudam e entram os turnos e o cálculo de movimento. Iniciativa rolada com 1d4 + modificador de Destreza + bônus de talentos e equipamentos, tudo editável nas regras da campanha. Empate ainda a decidir; a recomendação do Claude: aliados empatados agem juntos, no mesmo turno e na ordem que quiserem (como no Baldur's Gate 3); empate entre lados opostos desempata pelo maior valor de Destreza e, persistindo, por uma rolagem. (Para a Fase 8.)
+- Tokens inquebráveis: alguns tokens e objetos do mapa (portas, paredes, baús...) não podem ser quebrados, talvez marcados por etiquetas; os outros poderiam ser destruídos.
 
 ## Deixado para depois nos planos já feitos
 

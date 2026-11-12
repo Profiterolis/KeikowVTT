@@ -7,8 +7,8 @@
  * jogadores de uma cena a outra. O próprio mestre passeia por qualquer cena sem levar ninguém,
  * então a cena dele não é guardada.
  *
- * Os tokens (passo 4) ficam dentro de cada instância; as regras deles estão em `tokens.ts`.
- * As paredes, a luz, os itens e as regiões chegam nos passos seguintes da fase,
+ * Os tokens (passo 4) e as paredes (passo 5) ficam dentro de cada instância; as regras deles
+ * estão em `tokens.ts` e `paredes.ts`. A luz, os itens e as regiões chegam nos passos seguintes da fase,
  * cada um como um campo novo da instância.
  */
 import type { CoordHex } from './hex';
@@ -16,6 +16,7 @@ import { chaveHex } from './hex';
 import { criarLojaComHistorico, type LojaComHistorico } from './lojaHistorico';
 import type { EstadoMapa } from './mapa';
 import type { OpcoesRegistro } from './registro';
+import { normalizarParede, paredeVistaPeloJogador, problemaNaParede, type EstadoDaPorta, type Parede } from './paredes';
 import {
   conferirInstancias,
   dentroDoMapa,
@@ -57,8 +58,10 @@ export interface Instancia {
   readonly metrosPorPixel: number;
   /** Os tokens no mapa, pelo id do token. */
   readonly tokens: Readonly<Record<string, TokenNaInstancia>>;
-  /** Trava do mestre: nenhum jogador move tokens nesta instância. */
+  /** Trava do mestre: nenhum jogador move tokens nem abre portas nesta instância. */
   readonly movimentoTravado: boolean;
+  /** Paredes, portas e janelas, pelo id. */
+  readonly paredes: Readonly<Record<string, Parede>>;
 }
 
 export interface EstadoInstancias {
@@ -96,6 +99,7 @@ export function novaInstancia(id: string, nome: string, hex: CoordHex | null): I
     metrosPorPixel: METROS_POR_PIXEL_PADRAO,
     tokens: {},
     movimentoTravado: false,
+    paredes: {},
   };
 }
 
@@ -121,6 +125,12 @@ export function problemaNaInstancia(instancia: Instancia): string | null {
       return problema;
     }
   }
+  for (const [id, parede] of Object.entries(instancia.paredes)) {
+    const problema = id === parede.id ? problemaNaParede(parede) : 'Uma parede está guardada com o id errado.';
+    if (problema) {
+      return problema;
+    }
+  }
   const fichas = Object.values(instancia.tokens).map((t) => t.fichaId);
   if (new Set(fichas).size !== fichas.length) {
     return 'Uma ficha tem dois tokens na mesma instância.';
@@ -128,8 +138,8 @@ export function problemaNaInstancia(instancia: Instancia): string | null {
   return null;
 }
 
-/** Os tokens mudam pelas ações próprias deles, não por aqui. */
-export type MudancasNaInstancia = Partial<Omit<Instancia, 'id' | 'tokens'>>;
+/** Os tokens e as paredes mudam pelas ações próprias deles, não por aqui. */
+export type MudancasNaInstancia = Partial<Omit<Instancia, 'id' | 'tokens' | 'paredes'>>;
 
 export type AcaoInstancias =
   | { readonly tipo: 'CriarInstancia'; readonly instancia: Instancia }
@@ -156,6 +166,19 @@ export type AcaoInstancias =
   | { readonly tipo: 'MoverToken'; readonly instanciaId: string; readonly tokenId: string; readonly x: number; readonly y: number }
   | { readonly tipo: 'EditarToken'; readonly instanciaId: string; readonly tokenId: string; readonly mudancas: MudancasNoToken }
   | { readonly tipo: 'TirarToken'; readonly instanciaId: string; readonly tokenId: string }
+  /** Várias paredes de uma vez (uma linha desenhada ponto a ponto), num só passo de desfazer. */
+  | { readonly tipo: 'CriarParedes'; readonly instanciaId: string; readonly paredes: readonly Parede[] }
+  /** Troca as paredes informadas (pelo id), como ao arrastar uma ponta que várias compartilham. */
+  | { readonly tipo: 'EditarParedes'; readonly instanciaId: string; readonly paredes: readonly Parede[] }
+  | { readonly tipo: 'ApagarParedes'; readonly instanciaId: string; readonly paredeIds: readonly string[] }
+  /** Abrir, fechar, trancar ou destrancar uma porta, ou torná-la secreta (ou revelá-la). */
+  | {
+      readonly tipo: 'MudarPorta';
+      readonly instanciaId: string;
+      readonly paredeId: string;
+      readonly estado?: EstadoDaPorta;
+      readonly secreta?: boolean;
+    }
   | { readonly tipo: 'CarregarInstancias'; readonly estado: EstadoInstancias };
 
 /** Uma cena que aponta para uma instância que não existe vira o mapa-mundi. */
@@ -274,6 +297,23 @@ function comTokens(
   return tokens === instancia.tokens ? estado : comInstancia(estado, { ...instancia, tokens });
 }
 
+/** A instância com as paredes trocadas; nada muda se a instância não existe ou se uma parede tem problema. */
+function comParedes(
+  estado: EstadoInstancias,
+  instanciaId: string,
+  mudar: (paredes: Readonly<Record<string, Parede>>) => Readonly<Record<string, Parede>>,
+): EstadoInstancias {
+  const instancia = estado.instancias[instanciaId];
+  if (!instancia) {
+    return estado;
+  }
+  const paredes = mudar(instancia.paredes);
+  if (paredes === instancia.paredes || Object.values(paredes).some((p) => problemaNaParede(p))) {
+    return estado;
+  }
+  return comInstancia(estado, { ...instancia, paredes });
+}
+
 /** Mudou o tamanho do mapa: os tokens que ficariam fora voltam para a borda. */
 function tokensDentroDoMapa(instancia: Instancia): Instancia {
   let mudou = false;
@@ -320,7 +360,13 @@ export function aplicarAcaoInstancias(estado: EstadoInstancias, acao: AcaoInstan
       if (!atual) {
         return estado;
       }
-      const editada: Instancia = tokensDentroDoMapa({ ...atual, ...acao.mudancas, id: atual.id, tokens: atual.tokens });
+      const editada: Instancia = tokensDentroDoMapa({
+        ...atual,
+        ...acao.mudancas,
+        id: atual.id,
+        tokens: atual.tokens,
+        paredes: atual.paredes,
+      });
       if (mesmaInstancia(editada, atual) || problemaNaInstancia(editada)) {
         return estado;
       }
@@ -403,6 +449,33 @@ export function aplicarAcaoInstancias(estado: EstadoInstancias, acao: AcaoInstan
         const { [acao.tokenId]: _tirado, ...restantes } = tokens;
         return restantes;
       });
+    case 'CriarParedes':
+      return comParedes(estado, acao.instanciaId, (paredes) => {
+        const novas = acao.paredes.filter((p) => !(p.id in paredes)).map(normalizarParede);
+        return novas.length === 0 ? paredes : { ...paredes, ...Object.fromEntries(novas.map((p) => [p.id, p])) };
+      });
+    case 'EditarParedes':
+      return comParedes(estado, acao.instanciaId, (paredes) => {
+        const trocadas = acao.paredes
+          .filter((p) => p.id in paredes)
+          .map(normalizarParede)
+          .filter((p) => !mesmaInstancia(p, paredes[p.id]));
+        return trocadas.length === 0 ? paredes : { ...paredes, ...Object.fromEntries(trocadas.map((p) => [p.id, p])) };
+      });
+    case 'ApagarParedes':
+      return comParedes(estado, acao.instanciaId, (paredes) => {
+        const apagar = new Set(acao.paredeIds.filter((id) => id in paredes));
+        return apagar.size === 0 ? paredes : Object.fromEntries(Object.entries(paredes).filter(([id]) => !apagar.has(id)));
+      });
+    case 'MudarPorta':
+      return comParedes(estado, acao.instanciaId, (paredes) => {
+        const porta = paredes[acao.paredeId];
+        if (!porta || porta.tipo !== 'porta') {
+          return paredes;
+        }
+        const mudada: Parede = { ...porta, estado: acao.estado ?? porta.estado, secreta: acao.secreta ?? porta.secreta };
+        return mesmaInstancia(mudada, porta) ? paredes : { ...paredes, [porta.id]: mudada };
+      });
     case 'CarregarInstancias':
       return acao.estado;
   }
@@ -410,7 +483,8 @@ export function aplicarAcaoInstancias(estado: EstadoInstancias, acao: AcaoInstan
 
 /**
  * As instâncias como um participante pode recebê-las. O jogador recebe só a instância em que
- * está, sem a descrição e sem os tokens escondidos; as outras não existem para ele, nem os nomes.
+ * está, sem a descrição, sem os tokens escondidos e sem saber das portas secretas; as outras
+ * não existem para ele, nem os nomes.
  * Também não sabe onde estão os outros jogadores. No online, é isto que o servidor manda a cada jogador.
  */
 export function instanciasVistasPor(estado: EstadoInstancias, participanteId: string): EstadoInstancias {
@@ -426,6 +500,13 @@ export function instanciasVistasPor(estado: EstadoInstancias, participanteId: st
             ...atual,
             descricao: '',
             tokens: Object.fromEntries(Object.entries(atual.tokens).filter(([, token]) => !token.escondido)),
+            // Portas secretas fechadas chegam como paredes comuns; abertas, nem chegam.
+            paredes: Object.fromEntries(
+              Object.values(atual.paredes).flatMap((parede) => {
+                const vista = paredeVistaPeloJogador(parede);
+                return vista ? [[vista.id, vista]] : [];
+              }),
+            ),
           },
         }
       : {},

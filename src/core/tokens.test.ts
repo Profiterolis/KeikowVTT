@@ -29,7 +29,7 @@ const aplicar = (estado: EstadoInstancias, ...acoes: AcaoInstancias[]) => acoes.
 
 /** Lyra é da Ana; o goblin é do mestre. */
 const DONOS: Record<string, string> = { lyra: 'j-ana', goblin: 'mestre', thorin: 'j-bia' };
-const contexto: ContextoDasInstancias = { obterDonoDaFicha: (id) => DONOS[id] ?? null };
+const contexto: ContextoDasInstancias = { obterDonoDaFicha: (id) => DONOS[id] ?? null, obterFicha: () => undefined };
 
 const base = aplicar(
   criarInstanciasVazias(),

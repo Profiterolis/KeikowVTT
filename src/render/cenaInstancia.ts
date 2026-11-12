@@ -10,6 +10,8 @@ import { pixelsEmMetros, type Instancia } from '../core/instancias';
 import type { PontoMundo } from '../core/hex';
 import type { CarregarImagem } from './camadaGrupo';
 import { criarCamadaTokens, type EventosDosTokens, type TokenParaDesenhar } from './camadaTokens';
+import { criarCamadaParedes, type EventosDasParedes, type ModoParedes } from './camadaParedes';
+import type { Parede } from '../core/paredes';
 
 const ZOOM_MINIMO = 0.02;
 const ZOOM_MAXIMO = 8;
@@ -37,6 +39,13 @@ export interface CenaInstancia {
   regua(ligada: boolean): void;
   tokens(lista: readonly TokenParaDesenhar[]): void;
   aoTokens(eventos: EventosDosTokens | null): void;
+  /** `verLinhas`: o mestre vê as paredes; os jogadores, só os ícones das portas. */
+  paredes(lista: readonly Parede[], verLinhas: boolean): void;
+  /** A ferramenta de paredes do mestre; `null` volta ao jogo (tokens e portas respondem). */
+  modoParedes(modo: ModoParedes): void;
+  paredeSelecionada(paredeId: string | null): void;
+  terminarDesenho(): void;
+  aoParedes(eventos: EventosDasParedes | null): void;
   /** Leva a câmera, deslizando, até um ponto da instância (o token de um jogador, no "Ir até"). */
   centralizarEm(x: number, y: number): void;
   /** O ponto da instância sob uma posição da tela (para soltar algo arrastado de fora), ou `null`. */
@@ -80,11 +89,15 @@ export function criarCenaInstancia(container: HTMLElement, carregarImagem: Carre
   let pronta = false;
   let destruida = false;
   let pendente: Instancia | null = null;
-  let controles: Omit<CenaInstancia, 'destruir' | 'aoTokens'> | null = null;
+  let controles: Omit<CenaInstancia, 'destruir' | 'aoTokens' | 'aoParedes'> | null = null;
   let medicaoPendente: ((pixels: number) => void) | null = null;
   let reguaPendente = false;
   let tokensPendentes: readonly TokenParaDesenhar[] = [];
   let eventosPendentes: EventosDosTokens | null = null;
+  let paredesPendentes: { lista: readonly Parede[]; verLinhas: boolean } = { lista: [], verLinhas: false };
+  let modoParedesPendente: ModoParedes = null;
+  let selecionadaPendente: string | null = null;
+  let eventosDasParedes: EventosDasParedes | null = null;
   /** Um "Ir até" pedido antes de a cena ficar pronta: vale logo depois do enquadramento. */
   let focoPendente: PontoMundo | null = null;
 
@@ -102,7 +115,7 @@ export function criarCenaInstancia(container: HTMLElement, carregarImagem: Carre
     }
     pronta = true;
     container.appendChild(app.canvas);
-    controles = montar(app, carregarImagem, () => eventosPendentes);
+    controles = montar(app, carregarImagem, () => eventosPendentes, () => eventosDasParedes);
     controles.mostrar(pendente);
     controles.enquadrar();
     if (focoPendente) {
@@ -112,6 +125,9 @@ export function criarCenaInstancia(container: HTMLElement, carregarImagem: Carre
     controles.medir(medicaoPendente);
     controles.regua(reguaPendente);
     controles.tokens(tokensPendentes);
+    controles.paredes(paredesPendentes.lista, paredesPendentes.verLinhas);
+    controles.modoParedes(modoParedesPendente);
+    controles.paredeSelecionada(selecionadaPendente);
   };
   void iniciar();
 
@@ -136,6 +152,22 @@ export function criarCenaInstancia(container: HTMLElement, carregarImagem: Carre
     aoTokens(eventos) {
       eventosPendentes = eventos;
     },
+    paredes(lista, verLinhas) {
+      paredesPendentes = { lista, verLinhas };
+      controles?.paredes(lista, verLinhas);
+    },
+    modoParedes(modo) {
+      modoParedesPendente = modo;
+      controles?.modoParedes(modo);
+    },
+    paredeSelecionada(id) {
+      selecionadaPendente = id;
+      controles?.paredeSelecionada(id);
+    },
+    terminarDesenho: () => controles?.terminarDesenho(),
+    aoParedes(eventos) {
+      eventosDasParedes = eventos;
+    },
     centralizarEm(x, y) {
       if (controles) {
         controles.centralizarEm(x, y);
@@ -158,7 +190,8 @@ function montar(
   app: Application,
   carregarImagem: CarregarImagem,
   eventosDosTokens: () => EventosDosTokens | null,
-): Omit<CenaInstancia, 'destruir' | 'aoTokens'> {
+  eventosDasParedes: () => EventosDasParedes | null,
+): Omit<CenaInstancia, 'destruir' | 'aoTokens' | 'aoParedes'> {
   const camera = new Viewport({
     screenWidth: app.screen.width,
     screenHeight: app.screen.height,
@@ -180,7 +213,9 @@ function montar(
   /** Os tokens; as paredes e a luz entram aqui também, entre o fundo e a régua, nos próximos passos. */
   const objetos = new Container();
   const camadaTokens = criarCamadaTokens(camera, app.canvas, app.ticker, carregarImagem, eventosDosTokens);
-  objetos.addChild(camadaTokens.container);
+  const camadaParedes = criarCamadaParedes(camera, app.canvas, eventosDasParedes);
+  // Paredes e ícones das portas ficam embaixo dos tokens: um token parado numa porta continua clicável.
+  objetos.addChild(camadaParedes.linhas, camadaParedes.icones, camadaTokens.container);
   const regua = new Graphics();
   const rotuloRegua = new Text({
     text: '',
@@ -335,11 +370,14 @@ function montar(
   });
   camera.on('zoomed', () => {
     camadaTokens.ajustarAoZoom();
+    camadaParedes.ajustarAoZoom();
   });
 
-  /** Com uma régua ligada, o botão esquerdo é dela: os tokens não respondem. */
+  let modoDasParedes: ModoParedes = null;
+
+  /** Com uma régua ou a ferramenta de paredes ligada, o botão esquerdo é dela: os tokens não respondem. */
   const atualizarModo = () => {
-    const comRegua = aoMedir !== null || reguaLivre;
+    const comRegua = aoMedir !== null || reguaLivre || modoDasParedes !== null;
     camadaTokens.interativa(!comRegua);
     // O PixiJS controla o cursor da tela: a cruz da régua passa por ele.
     app.renderer.events.cursorStyles.default = comRegua ? 'crosshair' : 'inherit';
@@ -363,6 +401,14 @@ function montar(
       atualizarModo();
     },
     tokens: (lista) => camadaTokens.mostrar(lista),
+    paredes: (lista, verLinhas) => camadaParedes.mostrar(lista, verLinhas),
+    modoParedes(modo) {
+      modoDasParedes = modo;
+      camadaParedes.definirModo(modo);
+      atualizarModo();
+    },
+    paredeSelecionada: (id) => camadaParedes.selecionar(id),
+    terminarDesenho: () => camadaParedes.terminarDesenho(),
     centralizarEm(x, y) {
       // Aproxima até um token comum ficar com uns 60 pixels na tela, se a câmera estiver mais longe.
       const escala = atual ? Math.min(Math.max(camera.scale.x, 60 / (1.5 / atual.metrosPorPixel)), ZOOM_MAXIMO) : camera.scale.x;

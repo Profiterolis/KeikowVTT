@@ -11,6 +11,7 @@ import { TAMANHOS } from './entradas';
 import { entradaDaFicha, type Ficha } from './fichas';
 import type { EstadoInstancias, Instancia } from './instancias';
 import { imagemDoToken } from './imagens';
+import { alcancaAPorta, caminhoLivre, pontoDeParada, raioDoCorpo, type Ponto } from './paredes';
 import { PERMITIDO, type Permissao } from './permissoes';
 import type { Regras } from './regras';
 import { ehMestre } from './visibilidade';
@@ -121,12 +122,81 @@ export function nomeNumerado(base: string, nomesExistentes: readonly string[]): 
   return `${limpo} ${numero}`;
 }
 
-/** O que as instâncias consultam das fichas: quem controla cada uma. */
+/** O que as instâncias consultam das fichas: quem controla cada uma e o tamanho da criatura. */
 export interface ContextoDasInstancias {
   readonly obterDonoDaFicha: (fichaId: string) => string | null;
+  readonly obterFicha: (fichaId: string) => Ficha | undefined;
 }
 
-export const SEM_FICHAS: ContextoDasInstancias = { obterDonoDaFicha: () => null };
+export const SEM_FICHAS: ContextoDasInstancias = { obterDonoDaFicha: () => null, obterFicha: () => undefined };
+
+/** O raio do círculo desenhado do token, em pixels da instância. */
+export function raioDesenhado(token: TokenNaInstancia, instancia: Instancia, contexto: ContextoDasInstancias): number {
+  return diametroEmMetros(token, contexto.obterFicha(token.fichaId)) / 2 / instancia.metrosPorPixel;
+}
+
+/** O raio do corpo que bate nas paredes, em pixels da instância. */
+export function raioDoCorpoDoToken(token: TokenNaInstancia, instancia: Instancia, contexto: ContextoDasInstancias): number {
+  return raioDoCorpo(diametroEmMetros(token, contexto.obterFicha(token.fichaId)), instancia.metrosPorPixel);
+}
+
+/**
+ * Até onde o token chega indo em linha reta até `destino`: para logo antes da primeira parede,
+ * porta fechada ou janela, e nunca sai do mapa. `ignorarParedes` (só o mestre, com Shift) passa por tudo.
+ */
+export function destinoDoMovimento(
+  instancia: Instancia,
+  token: TokenNaInstancia,
+  destino: Ponto,
+  contexto: ContextoDasInstancias,
+  ignorarParedes = false,
+): Ponto {
+  const alvo = dentroDoMapa(instancia, destino.x, destino.y);
+  if (ignorarParedes) {
+    return alvo;
+  }
+  return pontoDeParada(token, alvo, raioDoCorpoDoToken(token, instancia, contexto), Object.values(instancia.paredes));
+}
+
+/**
+ * Se um participante pode abrir ou fechar uma porta agora. O mestre pode tudo; o jogador abre ou
+ * fecha (sem trancar nem destrancar) uma porta que conhece, com um token dele a até 1,5 m dela.
+ */
+export function permissaoParaPorta(
+  estado: EstadoInstancias,
+  instanciaId: string,
+  paredeId: string,
+  participanteId: string,
+  contexto: ContextoDasInstancias,
+): Permissao {
+  const instancia = estado.instancias[instanciaId];
+  const porta = instancia?.paredes[paredeId];
+  if (!instancia || !porta || porta.tipo !== 'porta') {
+    return recusa('Essa porta não existe.');
+  }
+  if (ehMestre(participanteId)) {
+    return PERMITIDO;
+  }
+  if (porta.secreta) {
+    return recusa('Essa porta não existe.');
+  }
+  const cena = estado.cenas[participanteId] ?? estado.cenaInicial;
+  if (cena.tipo !== 'instancia' || cena.instanciaId !== instanciaId) {
+    return recusa('Você não está nesta instância.');
+  }
+  if (instancia.movimentoTravado) {
+    return recusa('O mestre travou o movimento nesta instância.');
+  }
+  if (porta.estado === 'trancada') {
+    return recusa('Trancada.');
+  }
+  const perto = Object.values(instancia.tokens).some(
+    (token) =>
+      contexto.obterDonoDaFicha(token.fichaId) === participanteId &&
+      alcancaAPorta(token, raioDesenhado(token, instancia, contexto), porta, instancia.metrosPorPixel),
+  );
+  return perto ? PERMITIDO : recusa('Longe demais da porta: chegue a até 1,5 m dela.');
+}
 
 const recusa = (motivo: string): Permissao => ({ ok: false, motivo });
 
@@ -191,10 +261,32 @@ export function conferirInstancias(
     if (a === d) {
       continue;
     }
-    const { tokens: tokensAntes, ...restoAntes } = a;
-    const { tokens: tokensDepois, ...restoDepois } = d;
-    if (!igual(restoAntes, restoDepois) || !igual(Object.keys(tokensAntes).sort(), Object.keys(tokensDepois).sort())) {
+    const { tokens: tokensAntes, paredes: paredesAntes, ...restoAntes } = a;
+    const { tokens: tokensDepois, paredes: paredesDepois, ...restoDepois } = d;
+    if (
+      !igual(restoAntes, restoDepois) ||
+      !igual(Object.keys(tokensAntes).sort(), Object.keys(tokensDepois).sort()) ||
+      !igual(Object.keys(paredesAntes).sort(), Object.keys(paredesDepois).sort())
+    ) {
       return soOMestre;
+    }
+    // Paredes: o jogador só abre ou fecha portas.
+    for (const [paredeId, paredeAntes] of Object.entries(paredesAntes)) {
+      const paredeDepois = paredesDepois[paredeId];
+      if (igual(paredeAntes, paredeDepois)) {
+        continue;
+      }
+      const soAbriuOuFechou =
+        igual({ ...paredeAntes, estado: '' }, { ...paredeDepois, estado: '' }) &&
+        paredeAntes.estado !== 'trancada' &&
+        paredeDepois.estado !== 'trancada';
+      if (!soAbriuOuFechou) {
+        return recusa('Só o mestre muda as paredes; você só abre e fecha portas.');
+      }
+      const permissao = permissaoParaPorta(antes, id, paredeId, autorId, contexto);
+      if (!permissao.ok) {
+        return permissao;
+      }
     }
     for (const [tokenId, tokenAntes] of Object.entries(tokensAntes)) {
       const tokenDepois = tokensDepois[tokenId];
@@ -207,6 +299,10 @@ export function conferirInstancias(
       const permissao = permissaoParaMover(antes, id, tokenId, autorId, contexto);
       if (!permissao.ok) {
         return permissao;
+      }
+      // O corpo do token não atravessa paredes, portas fechadas nem janelas.
+      if (!caminhoLivre(tokenAntes, tokenDepois, raioDoCorpoDoToken(tokenAntes, a, contexto), Object.values(a.paredes))) {
+        return recusa('Uma parede está no caminho.');
       }
     }
   }

@@ -3,6 +3,8 @@ import type { PontoMundo } from '../core/hex';
 import type { Instancia } from '../core/instancias';
 import type { TokenVisto } from '../core/tokens';
 import type { EventosDosTokens } from '../render/camadaTokens';
+import type { EventosDasParedes, ModoParedes } from '../render/camadaParedes';
+import type { Parede } from '../core/paredes';
 import { criarCenaInstancia, type CenaInstancia } from '../render/cenaInstancia';
 import { useBancoDeImagens } from './contextoImagens';
 
@@ -39,6 +41,12 @@ export function VistaInstancia({
   eventos,
   aoSoltar,
   foco,
+  paredes,
+  verLinhas,
+  modoParedes,
+  paredeSelecionada,
+  eventosParedes,
+  pedidoDeTermino,
 }: {
   readonly instancia: Instancia;
   /** Com a régua da escala ligada, recebe a distância medida em pixels; `null` desliga a régua. */
@@ -51,6 +59,14 @@ export function VistaInstancia({
   readonly aoSoltar: ((arraste: ArrasteDeToken, ponto: PontoMundo) => void) | null;
   /** O "Ir até": um ponto para a câmera ir; `vez` muda a cada pedido, mesmo para o mesmo ponto. */
   readonly foco: { readonly x: number; readonly y: number; readonly vez: number } | null;
+  readonly paredes: readonly Parede[];
+  /** O mestre vê as linhas das paredes; os jogadores, só as portas. */
+  readonly verLinhas: boolean;
+  readonly modoParedes: ModoParedes;
+  readonly paredeSelecionada: string | null;
+  readonly eventosParedes: EventosDasParedes | null;
+  /** Muda a cada Esc: termina a linha que está sendo desenhada. */
+  readonly pedidoDeTermino: number;
 }) {
   const banco = useBancoDeImagens();
   const areaRef = useRef<HTMLDivElement>(null);
@@ -98,6 +114,28 @@ export function VistaInstancia({
   useEffect(() => {
     cenaRef.current?.aoTokens(eventos);
   }, [eventos]);
+
+  useEffect(() => {
+    cenaRef.current?.paredes(paredes, verLinhas);
+  }, [paredes, verLinhas]);
+
+  useEffect(() => {
+    cenaRef.current?.modoParedes(modoParedes);
+  }, [modoParedes]);
+
+  useEffect(() => {
+    cenaRef.current?.paredeSelecionada(paredeSelecionada);
+  }, [paredeSelecionada]);
+
+  useEffect(() => {
+    cenaRef.current?.aoParedes(eventosParedes);
+  }, [eventosParedes]);
+
+  useEffect(() => {
+    if (pedidoDeTermino > 0) {
+      cenaRef.current?.terminarDesenho();
+    }
+  }, [pedidoDeTermino]);
 
   const aoArrastarPorCima = (evento: DragEvent<HTMLDivElement>) => {
     if (aoSoltar && evento.dataTransfer.types.includes(TIPO_ARRASTE_TOKEN)) {

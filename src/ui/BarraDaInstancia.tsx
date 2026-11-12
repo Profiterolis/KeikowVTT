@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { Participante } from '../core/campanha';
 import {
   CENA_MAPA,
@@ -34,6 +34,9 @@ export function BarraDaInstancia({
   regua,
   aoAlternarRegua,
   destinosIrAte,
+  editandoParedes,
+  aoAlternarParedes,
+  barraDeParedes,
   aoIrAoMapa,
 }: {
   readonly instancia: Instancia;
@@ -50,6 +53,10 @@ export function BarraDaInstancia({
   readonly aoAlternarRegua: () => void;
   /** O mestre vai até o grupo ou um jogador; o jogador, até um personagem desta instância. */
   readonly destinosIrAte: readonly DestinoIrAte[];
+  readonly editandoParedes: boolean;
+  readonly aoAlternarParedes: () => void;
+  /** As ferramentas de paredes, mostradas enquanto o mestre as edita. */
+  readonly barraDeParedes: ReactNode;
   /** O mestre volta a ver o mapa-mundi; o jogador só espia, sem sair da instância. */
   readonly aoIrAoMapa: () => void;
 }) {
@@ -95,6 +102,11 @@ export function BarraDaInstancia({
           </button>
         )}
         {mestre && (
+          <button type="button" aria-pressed={editandoParedes} onClick={aoAlternarParedes} title="Desenhar paredes, portas e janelas">
+            🧱 Paredes
+          </button>
+        )}
+        {mestre && (
           <button
             type="button"
             aria-pressed={instancia.movimentoTravado}
@@ -117,6 +129,7 @@ export function BarraDaInstancia({
           </button>
         )}
       </div>
+      {mestre && barraDeParedes}
       {mestre && (
         <div className="barra-grupo-linha barra-instancia-jogadores">
           <span>
