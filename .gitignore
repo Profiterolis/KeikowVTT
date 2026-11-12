@@ -3,3 +3,7 @@ dist/
 *.local
 *.log
 .claude/settings.local.json
+
+# Assets locais do usuario para testar instancias, tokens e armas (nao vao para o Git)
+Map Making/
+Token Images/
